@@ -3,26 +3,93 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Unemployed Wizard</title>
+    <title>Downtown Free Events</title>
+    <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
     <style>
+      html,
       body {
+        height: 100%;
         margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: #1f2937;
         background: #f3f4f6;
       }
-      canvas {
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 4px 16px;
+        padding: 10px 16px;
         background: #ffffff;
-        border: 1px solid #d1d5db;
+        border-bottom: 1px solid #d1d5db;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 18px;
+      }
+      #map-status {
+        flex: 1;
+        font-size: 14px;
+        color: #4b5563;
+      }
+      header a {
+        font-size: 14px;
+        color: #2563eb;
+      }
+      #map {
+        flex: 1;
+        min-height: 300px;
+      }
+      /* Roaming NPC: above the pins, below popups, never blocks clicks. */
+      .npc-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 650;
+        pointer-events: none;
+      }
+      .event-popup {
+        width: 220px;
+      }
+      .event-popup img {
+        display: block;
+        width: 100%;
+        max-height: 120px;
+        object-fit: cover;
+        border-radius: 4px;
+        margin-bottom: 6px;
+      }
+      .event-popup h3 {
+        margin: 0 0 4px;
+        font-size: 15px;
+      }
+      .event-popup p {
+        margin: 2px 0;
+      }
+      .event-popup .free {
+        color: #b91c1c;
+        font-weight: 600;
+      }
+      .event-popup .muted {
+        color: #6b7280;
       }
     </style>
   </head>
   <body>
-    <a href="/map.html" style="position: fixed; top: 12px; left: 16px; font: 14px system-ui, sans-serif">Event map →</a>
-    <canvas id="myCanvas" width="800" height="450"></canvas>
-    <!-- Compiled from src/frontend/*.ts by `npm run build:frontend` -->
+    <header>
+      <h1>Free events in downtown Montreal</h1>
+      <span id="map-status">Loading events…</span>
+      <a href="/">Canvas</a>
+    </header>
+    <div id="map"></div>
+    <script src="/vendor/leaflet/leaflet.js"></script>
+    <!-- Compiled from src/frontend/*.ts -->
     <script src="/js/npc.js"></script>
-    <script src="/js/world.js"></script>
+    <script src="/js/area.js"></script>
+    <script src="/js/map.js"></script>
   </body>
 </html>
