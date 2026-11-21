@@ -5,6 +5,8 @@ import { ZodError } from "zod";
 import { config } from "./config.ts";
 import { HttpError } from "./errors.ts";
 import { eventsRouter } from "./events/routes.ts";
+import { geocodeRouter } from "./geocode-route.ts";
+import { walkwaysRouter } from "./walkways.ts";
 
 export function createApp() {
   const app = express();
@@ -14,10 +16,12 @@ export function createApp() {
 
   app.use("/uploads", express.static(config.uploadDir, { index: false, maxAge: "7d" }));
 
-  // Frontend: public/index.html (canvas), public/map.html, and compiled scripts in public/js.
+  // Frontend: public/index.html (event map), public/area-editor.html, and compiled scripts in public/js.
   app.use(express.static(config.publicDir));
   // Leaflet (map library) straight from the npm package.
   app.use("/vendor/leaflet", express.static(config.leafletDir, { maxAge: "7d" }));
+  // leaflet-rotate (GPL-3.0) adds map rotation; see MAP_ROTATION in src/frontend/map.ts.
+  app.use("/vendor/leaflet-rotate", express.static(config.leafletRotateDir, { maxAge: "7d" }));
 
   // "/" is the frontend, so the API overview lives at /api.
   app.get("/api", (_req, res) => {
@@ -30,6 +34,8 @@ export function createApp() {
         "PATCH  /api/events/:id",
         "DELETE /api/events/:id",
         "DELETE /api/events/:id/pictures/:pictureId",
+        "GET    /api/walkways?south=&west=&north=&east=",
+        "GET    /api/geocode?q=address&viewbox=west,south,east,north",
         "GET    /api/health",
       ],
     });
@@ -40,6 +46,8 @@ export function createApp() {
   });
 
   app.use("/api/events", eventsRouter);
+  app.use("/api/walkways", walkwaysRouter);
+  app.use("/api/geocode", geocodeRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Not found" });

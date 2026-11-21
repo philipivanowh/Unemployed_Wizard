@@ -6,6 +6,10 @@
     <title>Downtown Free Events</title>
     <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
     <style>
+      /* The hidden attribute always wins over display rules below. */
+      [hidden] {
+        display: none !important;
+      }
       html,
       body {
         height: 100%;
@@ -44,13 +48,416 @@
         flex: 1;
         min-height: 300px;
       }
-      /* Roaming NPC: above the pins, below popups, never blocks clicks. */
-      .npc-layer {
+      #game-clock {
+        font: 600 13px ui-monospace, monospace;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #fef3c7;
+        color: #78350f;
+        border: 1px solid #f59e0b;
+      }
+      /* Townspeople sprites (a canvas inside a Leaflet marker). */
+      .npc-marker canvas {
+        display: block;
+      }
+      /* ---- Live events ---- */
+      .live-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 0 0 6px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #dcfce7;
+        color: #166534;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .live-badge::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #16a34a;
+        animation: blink 1.4s infinite;
+      }
+      .live-badge.soon {
+        background: #fef3c7;
+        color: #92400e;
+      }
+      .live-badge.soon::before {
+        background: #d97706;
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0.35;
+        }
+      }
+      .live-ring span {
         position: absolute;
-        top: 0;
-        left: 0;
-        z-index: 650;
-        pointer-events: none;
+        inset: 0;
+        border-radius: 50%;
+        border: 3px solid #16a34a;
+        background: rgba(22, 163, 74, 0.12);
+        animation: ring 1.8s ease-out infinite;
+      }
+      .live-ring.soon span {
+        border-color: #d97706;
+        background: rgba(217, 119, 6, 0.1);
+      }
+      @keyframes ring {
+        0% {
+          transform: scale(0.35);
+          opacity: 0.9;
+        }
+        100% {
+          transform: scale(1.15);
+          opacity: 0;
+        }
+      }
+      .take-me-there {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+        margin-top: 10px;
+        padding: 8px 12px;
+        border: 0;
+        border-radius: 8px;
+        background: #4f46e5;
+        color: #ffffff;
+        font: 600 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+        cursor: pointer;
+      }
+      .take-me-there::before {
+        content: "";
+        width: 14px;
+        height: 14px;
+        background: currentColor;
+        -webkit-mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-8-8-2z"/></svg>') center / contain no-repeat;
+        mask: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-8-8 18-2-8-8-2z"/></svg>') center / contain no-repeat;
+      }
+      .take-me-there:hover {
+        background: #4338ca;
+      }
+      .take-me-there:focus-visible {
+        outline: 3px solid rgba(79, 70, 229, 0.35);
+        outline-offset: 2px;
+      }
+
+      /* ---- Route on the map ---- */
+      .route-flow {
+        animation: flow 0.9s linear infinite;
+      }
+      @keyframes flow {
+        to {
+          stroke-dashoffset: -14;
+        }
+      }
+      .user-dot span {
+        position: absolute;
+        inset: 4px;
+        border-radius: 50%;
+        background: #2563eb;
+        border: 3px solid #ffffff;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+      }
+      .user-dot::before {
+        content: "";
+        position: absolute;
+        inset: -6px;
+        border-radius: 50%;
+        background: rgba(37, 99, 235, 0.25);
+        animation: ring 2s ease-out infinite;
+      }
+      .route-dest span {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        border: 3px solid #4f46e5;
+        background: rgba(79, 70, 229, 0.12);
+      }
+      .route-dest::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 10px;
+        height: 10px;
+        margin: -5px 0 0 -5px;
+        border-radius: 50%;
+        background: #4f46e5;
+        border: 2px solid #ffffff;
+      }
+
+      /* ---- Route card ---- */
+      .route-card {
+        position: fixed;
+        z-index: 1500;
+        left: 16px;
+        top: 64px;
+        width: 340px;
+        padding: 16px 18px 18px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18), 0 2px 6px rgba(15, 23, 42, 0.08);
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: #0f172a;
+        animation: card-in 0.22s ease-out;
+      }
+      @keyframes card-in {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+      }
+      .route-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .route-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: #4f46e5;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .route-kicker::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #4f46e5;
+      }
+      .route-card[data-state="arrived"] .route-kicker {
+        color: #16a34a;
+      }
+      .route-card[data-state="arrived"] .route-kicker::before {
+        background: #16a34a;
+      }
+      .route-close {
+        width: 30px;
+        height: 30px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: #64748b;
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .route-close:hover {
+        background: #f1f5f9;
+        color: #0f172a;
+      }
+      .route-title {
+        margin: 4px 0 14px;
+        font-size: 17px;
+        line-height: 1.3;
+        letter-spacing: -0.01em;
+        overflow-wrap: anywhere;
+      }
+      .route-stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        background: #f8fafc;
+      }
+      .route-stat {
+        padding: 10px 6px;
+        text-align: center;
+      }
+      .route-stat + .route-stat {
+        border-left: 1px solid #e2e8f0;
+      }
+      .route-stat b {
+        display: block;
+        font-size: 22px;
+        line-height: 1.1;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.02em;
+      }
+      .route-stat span {
+        display: block;
+        margin-top: 2px;
+        color: #64748b;
+        font-size: 11.5px;
+        font-weight: 600;
+      }
+      .route-stat:first-child b {
+        color: #4f46e5;
+      }
+      .route-progress {
+        height: 6px;
+        margin: 14px 0 0;
+        border-radius: 999px;
+        background: #e2e8f0;
+        overflow: hidden;
+      }
+      .route-progress i {
+        display: block;
+        height: 100%;
+        width: 3%;
+        border-radius: 999px;
+        background: #4f46e5;
+        transition: width 0.6s ease;
+      }
+      .route-card[data-state="arrived"] .route-progress i {
+        background: #16a34a;
+      }
+      .route-note {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        margin: 12px 0 0;
+        color: #475569;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+      .route-note::before {
+        content: "";
+        flex: none;
+        width: 8px;
+        height: 8px;
+        margin-top: 5px;
+        border-radius: 50%;
+        background: #94a3b8;
+      }
+      .route-note[data-state="busy"]::before {
+        background: #4f46e5;
+        animation: blink 1s infinite;
+      }
+      .route-note[data-state="ok"]::before {
+        background: #16a34a;
+        box-shadow: 0 0 0 3px #dcfce7;
+      }
+      .route-note[data-state="warn"]::before {
+        background: #d97706;
+        box-shadow: 0 0 0 3px #fef3c7;
+      }
+      .route-note[data-state="done"] {
+        color: #166534;
+        font-weight: 600;
+      }
+      .route-note[data-state="done"]::before {
+        background: #16a34a;
+      }
+      .route-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      .route-btn {
+        flex: 1;
+        height: 38px;
+        padding: 0 14px;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #ffffff;
+        color: #0f172a;
+        font: 600 14px system-ui, -apple-system, "Segoe UI", sans-serif;
+        cursor: pointer;
+      }
+      .route-btn:hover {
+        background: #f8fafc;
+      }
+      .route-btn-end {
+        color: #b91c1c;
+      }
+      .route-btn-primary {
+        background: #4f46e5;
+        border-color: #4f46e5;
+        color: #ffffff;
+      }
+      .route-btn-primary:hover {
+        background: #4338ca;
+      }
+      .route-btn:focus-visible,
+      .route-close:focus-visible {
+        outline: 3px solid rgba(79, 70, 229, 0.35);
+        outline-offset: 2px;
+      }
+      @media (max-width: 640px) {
+        .route-card {
+          left: 8px;
+          right: 8px;
+          top: auto;
+          bottom: 8px;
+          width: auto;
+        }
+      }
+
+      /* ---- Permission / message dialog ---- */
+      .sheet-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
+        display: grid;
+        place-items: center;
+        padding: 16px;
+        background: rgba(15, 23, 42, 0.45);
+        animation: fade 0.15s ease-out;
+      }
+      @keyframes fade {
+        from {
+          opacity: 0;
+        }
+      }
+      .sheet {
+        width: min(420px, 100%);
+        padding: 24px;
+        background: #ffffff;
+        border-radius: 18px;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.3);
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: #0f172a;
+        animation: card-in 0.2s ease-out;
+      }
+      .sheet-icon {
+        display: grid;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        margin-bottom: 14px;
+        border-radius: 14px;
+        background: #eef2ff;
+        color: #4f46e5;
+      }
+      .sheet-icon svg {
+        width: 24px;
+        height: 24px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .sheet h2 {
+        margin: 0 0 8px;
+        font-size: 19px;
+        letter-spacing: -0.01em;
+      }
+      .sheet p {
+        margin: 0 0 10px;
+        color: #475569;
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .sheet-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 18px;
+      }
+      .npc-tooltip {
+        font-size: 12px;
+        padding: 2px 6px;
       }
       .event-popup {
         width: 220px;
@@ -82,13 +489,21 @@
   <body>
     <header>
       <h1>Free events in downtown Montreal</h1>
+      <span id="game-clock" title="Game time: townspeople follow their routines by this clock">Mon 8:00 AM</span>
       <span id="map-status">Loading events…</span>
-      <a href="/">Canvas</a>
+      <a href="/add-event.html">Add event</a>
+      <a href="/area-editor.html">Edit area</a>
     </header>
     <div id="map"></div>
     <script src="/vendor/leaflet/leaflet.js"></script>
+    <script src="/vendor/leaflet-rotate/leaflet-rotate.js"></script>
     <!-- Compiled from src/frontend/*.ts -->
     <script src="/js/npc.js"></script>
+    <script src="/js/walk-graph.js"></script>
+    <script src="/js/routine.js"></script>
+    <script src="/js/crowds.js"></script>
+    <script src="/js/route-guide.js"></script>
+    <script src="/js/area-data.js"></script>
     <script src="/js/area.js"></script>
     <script src="/js/map.js"></script>
   </body>

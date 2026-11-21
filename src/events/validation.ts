@@ -73,6 +73,8 @@ const eventFields = {
 
 export const createEventSchema = z.object({
   ...eventFields,
+  // Only name, date, start time and address are required to create an event.
+  freeItems: eventFields.freeItems.optional(),
   endTime: eventFields.endTime.optional(),
   roomNumber: eventFields.roomNumber.optional(),
   description: eventFields.description.optional(),

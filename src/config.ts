@@ -10,11 +10,14 @@ export const config = {
   /** Frontend pages and compiled scripts. */
   publicDir: path.join(root, "public"),
   leafletDir: path.join(root, "node_modules", "leaflet", "dist"),
+  leafletRotateDir: path.join(root, "node_modules", "leaflet-rotate", "dist"),
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
   /** Nominatim server that turns addresses into coordinates. "off" disables geocoding. */
   geocoderUrl: process.env.GEOCODER_URL ?? "https://nominatim.openstreetmap.org",
   /** Nominatim requires a User-Agent that identifies the app. Adding contact info is recommended. */
   geocoderUserAgent: process.env.GEOCODER_USER_AGENT ?? "UnemployedWizard/0.1 (free food events app)",
+  /** Overpass API server for walkway data (OpenStreetMap paths). "off" disables it. */
+  overpassUrl: process.env.OVERPASS_URL ?? "https://overpass-api.de/api/interpreter",
   /** Max additional pictures per event (thumbnail not counted). */
   maxPicturesPerEvent: 20,
   /** Max size of a single uploaded image. */

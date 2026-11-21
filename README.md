@@ -27,14 +27,49 @@ Environment variables (all optional):
 | `UPLOAD_DIR`  | `uploads`      | Where uploaded images are saved |
 | `CORS_ORIGIN` | `*`            | Allowed CORS origin             |
 | `GEOCODER_URL` | `https://nominatim.openstreetmap.org` | Nominatim server for address lookups (`off` disables) |
+| `OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass server for walkway data (`off` disables it) |
 | `GEOCODER_USER_AGENT` | `UnemployedWizard/0.1 (…)` | Identifies the app to Nominatim; add contact info for production |
 
 ## Frontend
 
-- `http://localhost:3000/`: the canvas (`src/frontend/world.ts`, `npc.ts`).
-- `http://localhost:3000/map.html`: upcoming events in downtown Montreal (Ville-Marie and Milton-Parc) on an
-  OpenStreetMap map drawn with Leaflet, with the NPC roaming around (`src/frontend/map.ts`, `area.ts`).
+- `http://localhost:3000/`: upcoming events in the downtown area on an OpenStreetMap map drawn with Leaflet
+  (`src/frontend/map.ts`). Set `MAP_ROTATION` (degrees, clockwise) at the top of `map.ts` to rotate it.
+  Rotation uses the [leaflet-rotate](https://github.com/Raruto/leaflet-rotate) add-on, which is licensed **GPL-3.0**.
+- **Townspeople**: pixel-art people walk the area's real paths and streets on a daily routine.
+  - `npc.ts`: the sprites. Each person is built from 10 features (skin, eyes, hair, facial hair, top, bottoms,
+    shoes, hat, glasses, bag), each with several styles and many colors, listed in `NPC_FEATURES`. `NPC_SIZE` scales them.
+  - `routine.ts`: the clock in the header and each person's day: out in the morning, lunch, an afternoon
+    stroll or visit, an evening spot, then home for the night. The clock follows real time. Set `GAME_SPEED`
+    (for example 60) to make a day go by faster in a demo.
+  - `crowds.ts`: crowds at live events. From 20 minutes before an event starts until it ends, `CROWD_SIZE`
+    people walk in along the paths and gather around its pin. Then they leave. Live events get a pulsing ring
+    and a "Happening now" badge, and the header counts them. Events without an end time count as 2 hours.
+  - `route-guide.ts`: **Take me there**, a button in each event's popup. It explains why it needs your location,
+    then asks the browser for permission. It draws the walking route along real sidewalks from where you are and
+    shows the walking time, distance and arrival time. It updates as you move, says when you've arrived, and a
+    guide walks the route ahead of you. Your location stays in the browser and isn't sent to the server.
+  - `walk-graph.ts`: the walkway network and shortest routes. `NPC_COUNT` in `map.ts` sets how many people there are.
+- `http://localhost:3000/add-event.html`: a form to add an event (`src/frontend/add-event.ts`). Event name, date,
+  start time and address are required. End time, room, what's free, description and a photo are optional. After you
+  enter the address, a pin on a small map shows where it was found, and you can drag it or click to fix the spot.
+  The page then says whether the event will show on the map, and links to it.
+- `http://localhost:3000/area-editor.html`: edit the map's area outline and the NPC's spots on a map, then paste
+  the generated code into `src/frontend/area-data.ts`.
 - `http://localhost:3000/api`: a list of the API endpoints.
+
+### Address lookup
+
+`GET /api/geocode?q=<address>&viewbox=west,south,east,north` returns `{ latitude, longitude, label }` for an
+address, or 404 if it can't be found. `viewbox` is optional: it makes results inside that box preferred, but
+places outside it can still be found. Lookups share the Nominatim queue (1 per second, cached). Call it when a
+field is finished, not on every keystroke.
+
+### Walkways
+
+`GET /api/walkways?south=&west=&north=&east=` returns the walkable paths and streets in a box (at most 0.08° a side)
+as `{ nodes: [[lat, lng], …], edges: [[i, j], …] }`. The data comes from OpenStreetMap: the Overpass API first,
+then the main OpenStreetMap API if Overpass is busy. Each box is cached in `data/walkways/` for 30 days, so it's
+fetched once. After you change the area, the first page load takes up to about 30 seconds while it downloads.
 
 `src/frontend/*.ts` compiles to `public/js/`, and `npm run dev` rebuilds it as you edit.
 
@@ -69,7 +104,8 @@ no location.
 }
 ```
 
-- `date` is `YYYY-MM-DD`. `startTime` and `endTime` are 24-hour `HH:MM`. `endTime` and `roomNumber` are optional.
+- `date` is `YYYY-MM-DD`. `startTime` and `endTime` are 24-hour `HH:MM`. Only `title`, `date`, `startTime` and
+`address` are required. `freeItems` defaults to an empty list.
 - Images must be JPEG, PNG, WebP or GIF, 10 MB max each, with up to 20 extra pictures per event.
 - Image URLs are relative to the server, e.g. `http://localhost:3000/uploads/…`.
 

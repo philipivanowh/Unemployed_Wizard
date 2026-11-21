@@ -78,6 +78,7 @@ eventsRouter.post("/", eventImagesUpload, async (req, res) => {
       latitude != null && longitude != null ? { latitude, longitude } : await geocodeAddress(input.address);
     const fields: repo.EventFields = {
       ...input,
+      freeItems: input.freeItems ?? [],
       endTime: input.endTime ?? null,
       roomNumber: input.roomNumber ?? null,
       description: input.description ?? "",
