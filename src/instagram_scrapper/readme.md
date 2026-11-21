@@ -1,4 +1,4 @@
-how to run: have python, do pip install flask and I think pip install requests, and then in the same folder where you have the file do 'flask -app scrapper run'
+how to run: have python, do pip install flask and I think pip install requests, and then in the same folder where you have the file do 'flask --app scrapper run'
 how to use: Run the thing, it will expose an API for you to use at port 5000. If you want it to use another port, edit the code to change it.
 Then, querry it with the following request, for example:
 http://127.0.0.1:5000/querry?username=nike&limit=5
