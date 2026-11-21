@@ -1,9 +1,9 @@
 import { Router, type Request } from "express";
-import { config } from "../config.js";
-import { HttpError } from "../errors.js";
-import { deleteUploads, eventImagesUpload, getUploadedImages, uploadUrl } from "../uploads.js";
-import * as repo from "./repository.js";
-import { createEventSchema, listEventsQuerySchema, updateEventSchema } from "./validation.js";
+import { config } from "../config.ts";
+import { HttpError } from "../errors.ts";
+import { deleteUploads, eventImagesUpload, getUploadedImages, uploadUrl } from "../uploads.ts";
+import * as repo from "./repository.ts";
+import { createEventSchema, listEventsQuerySchema, updateEventSchema } from "./validation.ts";
 
 export const eventsRouter = Router();
 

@@ -5,14 +5,17 @@ Backend for a free food / free stuff events app. TypeScript + Express 5, SQLite
 
 ## Setup
 
-Requires **Node.js 22.13+** (Node 24 LTS recommended).
+Requires **Node.js 23.6+**. Node runs the TypeScript directly, so there's no build step.
 
 ```sh
 npm install
-npm run dev        # dev server with reload on http://localhost:3000
-# or
-npm run build && npm start
+npm run dev        # restarts on file changes, http://localhost:3000
+npm start          # same as: node src/index.ts
+npm run typecheck  # Node strips types without checking them, so run this too
 ```
+
+You can run it from any folder (`node src/index.ts`, or `node index.ts` inside `src/`).
+The `data/` and `uploads/` folders are always created in the project root.
 
 Environment variables (all optional):
 

@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Request } from "express";
 import multer from "multer";
-import { config } from "./config.js";
-import { HttpError } from "./errors.js";
+import { config } from "./config.ts";
+import { HttpError } from "./errors.ts";
 
 const MIME_TO_EXT: Record<string, string> = {
   "image/jpeg": ".jpg",
