@@ -1,7 +1,9 @@
-// Add Event page (/add-event.html): a form that creates an event through POST /api/events.
+// Add Event page (/add-event.html): a form that creates an event through POST /api/events,
+// or, opened as /add-event.html?edit=<id>, loads that event and saves changes with PATCH.
 // Required: event name, date, start time and address. Everything else is optional.
 // Includes a custom time picker, date shortcuts, free-item chips, a photo drop zone,
 // a map pin for the exact spot, and a live preview of the event card.
+// If editing is turned off for visitors (admin.ts), the form is disabled.
 // Wrapped in a function so its names don't clash with the other page scripts.
 
 (() => {
@@ -13,9 +15,15 @@
     endTime: string | null;
     address: string;
     roomNumber: string | null;
+    freeItems: string[];
+    description: string;
+    thumbnailUrl: string | null;
     latitude: number | null;
     longitude: number | null;
   }
+
+  /** Set when the page edits an existing event (?edit=<id>). */
+  const editId = new URLSearchParams(location.search).get("edit");
 
   const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
   const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -471,7 +479,7 @@
   }
 
   function showFormError(message: string): void {
-    showBanner(formError, "alert", "Couldn't publish yet", [message]);
+    showBanner(formError, "alert", editId ? "Couldn't save yet" : "Couldn't publish yet", [message]);
   }
 
   /** Checks in the browser first, so most mistakes show up without a round trip. */
@@ -539,17 +547,20 @@
   // Photo drop zone
 
   let previewUrl = "";
+  /** When editing: the event's current photo, until it's removed or replaced. */
+  let existingPhotoUrl = "";
   function showPhoto(): void {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
     previewUrl = "";
     const photo = photoInput.files?.[0];
     setFieldError("thumbnail", "");
     if (photo && !PHOTO_TYPES.includes(photo.type)) setFieldError("thumbnail", "Use a JPEG, PNG, WebP or GIF image.");
     else if (photo && photo.size > MAX_PHOTO_BYTES) setFieldError("thumbnail", "The photo must be 10 MB or smaller.");
     else if (photo) previewUrl = URL.createObjectURL(photo);
+    else if (existingPhotoUrl) previewUrl = existingPhotoUrl;
 
     photoPreview.src = previewUrl;
-    byId("photo-name").textContent = photo?.name ?? "";
+    byId("photo-name").textContent = photo?.name ?? (previewUrl ? "Current photo" : "");
     byId("photo-size").textContent = photo ? `${(photo.size / 1024 / 1024).toFixed(1)} MB` : "";
     photoSelected.hidden = !previewUrl;
     dropzone.hidden = Boolean(previewUrl);
@@ -558,6 +569,7 @@
   photoInput.addEventListener("change", showPhoto);
   byId("remove-photo").addEventListener("click", () => {
     photoInput.value = "";
+    existingPhotoUrl = "";
     showPhoto();
   });
   for (const type of ["dragenter", "dragover"]) {
@@ -588,24 +600,12 @@
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(pinMap);
-  for (const area of DOWNTOWN_AREAS) {
-    if (area.ring.length >= 3) {
-      L.polygon(area.ring, { color: "#6366f1", weight: 2, fillOpacity: 0.06, interactive: false }).addTo(pinMap);
-    }
-  }
-
   let pin: L.Marker | null = null;
   /** "lookup" pins came from the address and can be replaced; "manual" pins are the user's. */
   let pinSource: "lookup" | "manual" = "manual";
   let lookupLabel = "";
   let lookedUpAddress = "";
   let pendingLookup: Promise<void> = Promise.resolve();
-
-  function pinInside(): boolean {
-    if (!pin) return false;
-    const { lat, lng } = pin.getLatLng();
-    return isInDowntown(lat, lng);
-  }
 
   function describePin(note = "", busy = false): void {
     if (!pin) {
@@ -615,10 +615,8 @@
     } else {
       const { lat, lng } = pin.getLatLng();
       const where = pinSource === "lookup" && lookupLabel ? `Found: ${lookupLabel.split(", ").slice(0, 3).join(", ")}.` : `Pinned at ${lat.toFixed(5)}, ${lng.toFixed(5)}.`;
-      const inside = pinInside();
-      mapStatus.dataset.state = inside ? "ok" : "warn";
-      pinStatus.textContent =
-        where + (inside ? "" : " Outside the map area.") + (pinSource === "lookup" ? " Drag the pin if it's off." : " Drag to adjust.");
+      mapStatus.dataset.state = "ok";
+      pinStatus.textContent = where + (pinSource === "lookup" ? " Drag the pin if it's off." : " Drag to adjust.");
       clearPinButton.hidden = false;
     }
     updatePreview();
@@ -721,9 +719,8 @@
     pv.photo.hidden = !previewUrl;
 
     if (pin) {
-      const inside = pinInside();
-      pv.map.dataset.state = inside ? "ok" : "warn";
-      pv.mapText.textContent = inside ? "Will appear on the map" : "Outside the map area, so it won't show on the map";
+      pv.map.dataset.state = "ok";
+      pv.mapText.textContent = "Will appear on the map";
     } else {
       pv.map.dataset.state = "idle";
       pv.mapText.textContent = address ? "We'll find the address when you publish" : "Add a location to place it on the map";
@@ -733,30 +730,40 @@
   // -------------------------------------------------------------------------
   // Submit
 
+  /** False while editing is turned off for this browser, or the event to edit couldn't load. */
+  let formEnabled = true;
+  /** When editing: whether the event had a photo when it was loaded. */
+  let hadPhoto = false;
+
   function setBusy(busy: boolean): void {
-    submitButton.disabled = busy;
+    submitButton.disabled = busy || !formEnabled;
     submitButton.replaceChildren();
-    if (busy) submitButton.append(el("span", undefined, "spinner"), el("span", "Publishing…"));
-    else submitButton.append(icon("send"), el("span", "Publish event"));
+    if (busy) submitButton.append(el("span", undefined, "spinner"), el("span", editId ? "Saving…" : "Publishing…"));
+    else submitButton.append(icon("send"), el("span", editId ? "Save changes" : "Publish event"));
   }
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (!formEnabled) return;
     clearErrors();
     resultBox.hidden = true;
     if (!validate()) return;
     await pendingLookup;
     if (pin && pinSource === "lookup" && lookedUpAddress !== addressInput.value.trim()) clearPin();
 
+    // Creating: leave out empty optional fields. Editing: send them empty, which clears them.
     const data = new FormData();
+    const put = (name: string, value: string) => {
+      if (value || editId) data.append(name, value);
+    };
     data.append("title", titleInput.value.trim());
     data.append("date", dateInput.value);
     data.append("startTime", startPicker.value);
     data.append("address", addressInput.value.trim());
-    if (endPicker.value) data.append("endTime", endPicker.value);
-    if (roomInput.value.trim()) data.append("roomNumber", roomInput.value.trim());
-    if (freeItems.all.length > 0) data.append("freeItems", freeItems.all.join(", "));
-    if (descriptionInput.value.trim()) data.append("description", descriptionInput.value.trim());
+    put("endTime", endPicker.value);
+    put("roomNumber", roomInput.value.trim());
+    put("freeItems", freeItems.all.join(", "));
+    put("description", descriptionInput.value.trim());
     if (pin) {
       const { lat, lng } = pin.getLatLng();
       data.append("latitude", lat.toFixed(6));
@@ -764,10 +771,15 @@
     }
     const photo = photoInput.files?.[0];
     if (photo) data.append("thumbnail", photo);
+    else if (editId && hadPhoto && !existingPhotoUrl) data.append("removeThumbnail", "true");
 
     setBusy(true);
     try {
-      const res = await fetch("/api/events", { method: "POST", body: data });
+      const res = await fetch(editId ? `/api/events/${encodeURIComponent(editId)}` : "/api/events", {
+        method: editId ? "PATCH" : "POST",
+        headers: adminHeaders(),
+        body: data,
+      });
       const body = (await res.json().catch(() => ({}))) as CreatedEvent & {
         error?: string;
         details?: { path?: string; message?: string }[];
@@ -785,10 +797,12 @@
           placed = true;
         }
         showFormError(placed ? "Please fix the highlighted fields." : body.error ?? `Something went wrong (HTTP ${res.status}). Please try again.`);
+        if (res.status === 403) void checkAccess();
         return;
       }
       showSuccess(body);
-      resetForm();
+      if (editId) fillForm(body);
+      else resetForm();
     } catch {
       showFormError("Couldn't reach the server. Check your connection and try again.");
     } finally {
@@ -826,30 +840,123 @@
       el("div", event.roomNumber ? `${event.address} · ${event.roomNumber}` : event.address),
     ];
     const located = event.latitude !== null && event.longitude !== null;
-    const inside = located && isInDowntown(event.latitude!, event.longitude!);
-    if (!located) body.push(el("p", "We couldn't find that address, so it won't show on the map. Add it again with a pin on the map.", "warn"));
-    else if (!inside) body.push(el("p", "It's outside the map's area, so it won't show on the map.", "warn"));
+    if (!located) {
+      body.push(el("p", "We couldn't find that address, so it won't show on the map. Click the map above to pin the spot, then save again.", "warn"));
+    }
     if (event.date < today) body.push(el("p", "That date has passed, and the map only shows upcoming events.", "warn"));
 
     const actions = el("div", undefined, "actions");
-    if (inside && event.date >= today) {
+    if (located && event.date >= today) {
       const view = el("a", "View it on the map →");
       view.href = `/?event=${encodeURIComponent(event.id)}`;
       actions.append(view);
     }
-    const another = el("a", "Add another event");
-    another.href = "#";
-    another.addEventListener("click", (e) => {
-      e.preventDefault();
-      resultBox.hidden = true;
-      titleInput.focus();
-    });
-    actions.append(another);
+    if (!editId) {
+      const another = el("a", "Add another event");
+      another.href = "#";
+      another.addEventListener("click", (e) => {
+        e.preventDefault();
+        resultBox.hidden = true;
+        titleInput.focus();
+      });
+      actions.append(another);
+    }
     body.push(actions);
-    showBanner(resultBox, "check", `“${event.title}” is live`, body);
+    showBanner(resultBox, "check", editId ? `“${event.title}” is updated` : `“${event.title}” is live`, body);
+  }
+
+  // -------------------------------------------------------------------------
+  // Edit mode and edit access
+
+  /** Puts an existing event into the form. */
+  function fillForm(event: CreatedEvent): void {
+    titleInput.value = event.title;
+    dateInput.value = event.date;
+    if (event.date < today) dateInput.min = event.date; // a past event can keep its date
+    lastStart = "";
+    startPicker.setValue(event.startTime);
+    endPicker.setValue(event.endTime ?? "");
+    lastStart = event.startTime;
+    addressInput.value = event.address;
+    roomInput.value = event.roomNumber ?? "";
+    descriptionInput.value = event.description;
+    freeItems.clear();
+    for (const item of event.freeItems) freeItems.addFrom(item.replace(/,/g, " "));
+
+    photoInput.value = "";
+    hadPhoto = Boolean(event.thumbnailUrl);
+    existingPhotoUrl = event.thumbnailUrl ?? "";
+    showPhoto();
+
+    // A pin from the saved location. It counts as an address lookup, so changing the
+    // address looks it up again and moves the pin; dragging it makes it yours.
+    lookedUpAddress = event.address;
+    lookupLabel = "";
+    if (event.latitude !== null && event.longitude !== null) {
+      const at = L.latLng(event.latitude, event.longitude);
+      setPin(at, "lookup");
+      pinMap.setView(at, 17);
+    } else {
+      clearPin();
+      lookedUpAddress = event.address;
+    }
+    updateCounters();
+    syncPills();
+    updatePreview();
+  }
+
+  function setFormEnabled(enabled: boolean): void {
+    formEnabled = enabled;
+    form.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLTextAreaElement>("input, button, textarea").forEach((c) => {
+      c.disabled = !enabled;
+    });
+    setBusy(false);
+  }
+
+  /** Disables the form (with a message) while this browser isn't allowed to change events. */
+  async function checkAccess(): Promise<boolean> {
+    const access = await fetchEditAccess();
+    mountAdminBar(access, (a) => {
+      if (a.canEdit) {
+        formError.hidden = true;
+        setFormEnabled(true);
+      }
+    });
+    if (!access.canEdit) {
+      setFormEnabled(false);
+      showBanner(formError, "alert", editId ? "Editing is turned off" : "Adding events is turned off", [
+        "Adding, editing and removing events is turned off right now. Please check back later.",
+      ]);
+    }
+    return access.canEdit;
+  }
+
+  async function loadEventToEdit(id: string): Promise<void> {
+    document.title = "Edit Event";
+    const eyebrow = document.querySelector(".page-head .eyebrow");
+    if (eyebrow?.lastChild) eyebrow.lastChild.textContent = "Edit event";
+    const heading = document.querySelector(".page-head h1");
+    if (heading) heading.textContent = "Edit event";
+    const intro = document.querySelector(".page-head p");
+    if (intro) intro.textContent = "Change anything below, then save. Everyone sees the update on the map.";
+    setBusy(false);
+
+    try {
+      const res = await fetch(`/api/events/${encodeURIComponent(id)}`, { cache: "no-store" });
+      if (res.status === 404) throw new Error("That event doesn't exist any more. It may have been removed.");
+      if (!res.ok) throw new Error(`Couldn't load the event (HTTP ${res.status}).`);
+      fillForm((await res.json()) as CreatedEvent);
+    } catch (err) {
+      setFormEnabled(false);
+      showBanner(formError, "alert", "Couldn't open this event", [err instanceof Error ? err.message : String(err)]);
+    }
   }
 
   updateCounters();
   syncPills();
   updatePreview();
+  void (async () => {
+    const allowed = await checkAccess();
+    if (editId && allowed) await loadEventToEdit(editId);
+  })();
 })();

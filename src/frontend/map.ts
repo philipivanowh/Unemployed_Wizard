@@ -1,8 +1,10 @@
-// Map page: upcoming events as pins on an OpenStreetMap map, limited to downtown
-// Montreal (McGill Area). Townspeople walk the real walkways on a daily routine,
-// crowds gather at events while they're on, and "Take me there" draws a walking route.
+// Map page: upcoming events as pins on an OpenStreetMap map. It opens on the McGill area
+// (area-data.ts) and you can pan anywhere; "Back to McGill" returns. Townspeople walk the
+// area's real walkways on a daily routine, crowds gather at events in the area while
+// they're on, and "Take me there" draws a walking route. Event popups have Edit and Remove
+// buttons when editing is allowed (see admin.ts).
 // index.html loads Leaflet (global `L`), leaflet-rotate, npc.ts, walk-graph.ts, routine.ts,
-// crowds.ts, route-guide.ts, area-data.ts and area.ts before this file.
+// crowds.ts, route-guide.ts, area-data.ts, area.ts and admin.ts before this file.
 
 interface MapEvent {
   id: string;
@@ -20,7 +22,7 @@ interface MapEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Map, locked to the downtown area
+// Map
 
 /**
  * Map rotation in degrees, clockwise: 0 keeps north up, 90 turns the map a quarter
@@ -32,8 +34,10 @@ const MAP_ROTATION = 55;
 const areaRings = DOWNTOWN_AREAS.map((area) => area.ring);
 const areaBounds = L.latLngBounds(areaRings.flat());
 
+/** Where "Back to McGill" goes: McGill's main campus, 845 Sherbrooke St W. */
+const MCGILL: L.LatLngTuple = [45.5048, -73.5772];
+
 const eventMap = L.map("map", {
-  maxBoundsViscosity: 1, // can't drag past the edge
   zoomSnap: 0.25,
   // Fixed rotation: no rotate button, and no Shift+wheel, right-drag or touch gestures to change it.
   rotate: true,
@@ -42,49 +46,40 @@ const eventMap = L.map("map", {
   pitchDrag: false,
   touchRotate: false,
 });
-// Order matters: leaflet-rotate crashes if the bearing or the max bounds are set
-// before the map has a view. Show the area, rotate, then fit again for the rotated view.
+// Order matters: leaflet-rotate crashes if the bearing is set before the map has a view.
+// Show the area, rotate, then fit again for the rotated view.
 eventMap.fitBounds(areaBounds);
 eventMap.setBearing(MAP_ROTATION);
 eventMap.fitBounds(areaBounds);
-eventMap.setMaxBounds(areaBounds.pad(0.05));
 
-/** True while a walking route is shown (the map may then go past its area). */
-let routeShown = false;
-
-/** You can't zoom out further than the whole area (except while a walking route is shown). */
-function fitMinZoomToArea(): void {
-  if (routeShown) return;
-  eventMap.setMinZoom(eventMap.getBoundsZoom(areaBounds));
-}
-fitMinZoomToArea();
-eventMap.on("resize", fitMinZoomToArea);
+/** Zoom used by "Back to McGill": the opening view's zoom, so it looks like the start. */
+const homeZoom = eventMap.getZoom();
 
 // OpenStreetMap's tile servers require this attribution and are meant for light use.
-// `bounds` stops tiles far outside the area from being requested; the margin is wide
-// enough to fill the corners when the map is rotated.
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
-  bounds: areaBounds.pad(0.5),
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
 }).addTo(eventMap);
 
-// Dim everything outside the area: a world-sized polygon with the area cut out.
-const worldRing: [number, number][] = [
-  [90, -180],
-  [90, 180],
-  [-90, 180],
-  [-90, -180],
-];
-L.polygon([worldRing, ...areaRings], {
-  stroke: false,
-  fillColor: "#111827",
-  fillOpacity: 0.35,
-  interactive: false,
-}).addTo(eventMap);
-for (const ring of areaRings) {
-  L.polygon(ring, { color: "#2563eb", weight: 2, fill: false, interactive: false }).addTo(eventMap);
-}
+// "Back to McGill" button, under the zoom buttons.
+const HomeControl = L.Control.extend({
+  onAdd(): HTMLElement {
+    const box = L.DomUtil.create("div", "leaflet-bar leaflet-control home-control");
+    const link = L.DomUtil.create("a", "", box);
+    link.href = "#";
+    link.textContent = "Back to McGill";
+    link.title = "Back to McGill";
+    link.setAttribute("role", "button");
+    L.DomEvent.disableClickPropagation(box);
+    L.DomEvent.on(link, "click", (e) => {
+      L.DomEvent.preventDefault(e);
+      eventMap.closePopup();
+      eventMap.setView(MCGILL, homeZoom);
+    });
+    return box;
+  },
+});
+new HomeControl({ position: "topleft" }).addTo(eventMap);
 
 // ---------------------------------------------------------------------------
 // Event pins
@@ -163,13 +158,79 @@ function eventPopup(event: LocatedEvent): HTMLElement {
     void routeGuide.start(event);
   });
   popup.append(go);
+  if (editAccess.canEdit) popup.append(...editControls(event));
   return popup;
 }
 
-/** Events with a location inside the area, by id. Townspeople and crowds use these too. */
+// ---------------------------------------------------------------------------
+// Editing (Edit / Remove in the popup, the "Add event" link, the admin bar)
+
+/** Until the server answers, show no edit controls. */
+let editAccess: EditAccess = { publicEditing: false, admin: false, canEdit: false };
+
+function applyEditAccess(access: EditAccess): void {
+  editAccess = access;
+  const addLink = document.getElementById("add-event-link");
+  if (addLink) addLink.hidden = !access.canEdit;
+}
+
+async function refreshEditAccess(): Promise<void> {
+  const access = await fetchEditAccess();
+  applyEditAccess(access);
+  mountAdminBar(access, applyEditAccess);
+}
+
+/** "Edit" and "Remove" buttons; Remove asks once more before deleting. */
+function editControls(event: LocatedEvent): HTMLElement[] {
+  const actions = makeElement("div", undefined, "event-actions");
+  const note = makeElement("p", undefined, "action-note");
+  note.hidden = true;
+
+  const edit = makeElement("a", "Edit");
+  edit.href = `/add-event.html?edit=${encodeURIComponent(event.id)}`;
+
+  const remove = makeElement("button", "Remove", "danger");
+  remove.type = "button";
+  let armed = false;
+  remove.addEventListener("click", async () => {
+    if (!armed) {
+      armed = true;
+      remove.textContent = "Yes, remove";
+      remove.classList.add("confirm");
+      note.textContent = `Remove “${event.title}” for everyone? This can't be undone.`;
+      note.className = "action-note";
+      note.hidden = false;
+      return;
+    }
+    remove.disabled = true;
+    remove.textContent = "Removing…";
+    try {
+      const res = await fetch(`/api/events/${encodeURIComponent(event.id)}`, { method: "DELETE", headers: adminHeaders() });
+      if (!res.ok && res.status !== 404) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      eventMap.closePopup();
+      await refreshEvents();
+    } catch (err) {
+      note.textContent = `Couldn't remove it: ${err instanceof Error ? err.message : err}`;
+      note.className = "action-note error";
+      note.hidden = false;
+      remove.disabled = false;
+      remove.textContent = "Try again";
+      if (/turned off/i.test(note.textContent)) void refreshEditAccess();
+    }
+  });
+
+  actions.append(edit, remove);
+  return [actions, note];
+}
+
+/** Every upcoming event with a location, by id (all get pins). */
 const eventsById = new Map<string, LocatedEvent>();
 const pinsById = new Map<string, L.Marker>();
 const liveRingsById = new Map<string, L.Marker>();
+/** Events inside the walkway area: townspeople visit these and crowds gather there. */
 let downtownEvents: LocatedEvent[] = [];
 let eventSummary = "";
 
@@ -194,12 +255,14 @@ async function refreshEvents(): Promise<void> {
 
     // Add new pins, move edited ones, remove deleted ones.
     const seen = new Set<string>();
-    for (const event of downtownEvents) {
+    for (const event of located) {
       seen.add(event.id);
       eventsById.set(event.id, event);
       const existing = pinsById.get(event.id);
       if (existing) {
         existing.setLatLng([event.latitude, event.longitude]);
+        existing.options.title = event.title;
+        existing.getElement()?.setAttribute("title", event.title);
         continue;
       }
       const marker = L.marker([event.latitude, event.longitude], { title: event.title })
@@ -215,14 +278,12 @@ async function refreshEvents(): Promise<void> {
       eventsById.delete(id);
     }
 
-    const outside = located.length - downtownEvents.length;
     const missing = data.events.length - located.length;
-    const notes = [outside > 0 ? `${outside} outside downtown` : "", missing > 0 ? `${missing} without a location` : ""].filter(Boolean);
     eventSummary =
       data.events.length === 0
         ? "No upcoming events yet"
-        : `${downtownEvents.length} upcoming event${downtownEvents.length === 1 ? "" : "s"} downtown` +
-          (notes.length ? ` · ${notes.join(" · ")}` : "");
+        : `${located.length} upcoming event${located.length === 1 ? "" : "s"}` +
+          (missing > 0 ? ` · ${missing} without a location` : "");
     updateLive();
   } catch (err) {
     console.error("Failed to load events", err);
@@ -235,7 +296,7 @@ function updateLive(): void {
   gameClock.update();
   const now = gameClock.now;
   let liveCount = 0;
-  for (const event of downtownEvents) {
+  for (const event of eventsById.values()) {
     const phase = eventPhase(event, now);
     const live = phase === "live";
     if (live) liveCount++;
@@ -452,17 +513,6 @@ const routeGuide = new RouteGuide({
   graph: () => walkGraph,
   toPoint: toMapPoint,
   toLatLng,
-  // Let the map show where you are, even outside the area, while a route is up.
-  onActiveChange: (active) => {
-    routeShown = active;
-    if (active) {
-      eventMap.setMaxBounds(null as unknown as L.LatLngBounds);
-      eventMap.setMinZoom(3);
-    } else {
-      eventMap.setMaxBounds(areaBounds.pad(0.05));
-      fitMinZoomToArea();
-    }
-  },
   onGuide: (points, target) => {
     guideWalker?.dismiss();
     guideWalker = null;
@@ -485,7 +535,11 @@ const eventsLoaded = refreshEvents().then(() => {
     pinsById.get(event.id)?.openPopup();
   }
 });
-setInterval(() => void refreshEvents(), EVENT_REFRESH_MS);
+void refreshEditAccess();
+setInterval(() => {
+  void refreshEvents();
+  void refreshEditAccess();
+}, EVENT_REFRESH_MS);
 setInterval(updateLive, LIVE_CHECK_MS);
 
 void startPeople();

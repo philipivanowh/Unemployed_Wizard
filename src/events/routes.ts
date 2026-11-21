@@ -3,6 +3,7 @@ import { config } from "../config.ts";
 import { HttpError } from "../errors.ts";
 import { geocodeAddress } from "../geocode.ts";
 import { deleteUploads, eventImagesUpload, getUploadedImages, uploadUrl } from "../uploads.ts";
+import { requireEditAccess } from "../settings.ts";
 import * as repo from "./repository.ts";
 import { createEventSchema, listEventsQuerySchema, updateEventSchema } from "./validation.ts";
 
@@ -67,7 +68,7 @@ eventsRouter.get("/:id", (req, res) => {
 });
 
 // POST /api/events  (multipart/form-data or JSON)
-eventsRouter.post("/", eventImagesUpload, async (req, res) => {
+eventsRouter.post("/", requireEditAccess, eventImagesUpload, async (req, res) => {
   const event = await withUploadCleanup(req, async () => {
     const { latitude, longitude, ...input } = createEventSchema.parse(req.body ?? {});
     assertCoordinatePair(latitude, longitude);
@@ -96,7 +97,7 @@ eventsRouter.post("/", eventImagesUpload, async (req, res) => {
 // - `thumbnail` file replaces the thumbnail; `removeThumbnail=true` clears it.
 // - `pictures` files are appended; `removePictureIds` deletes existing ones.
 // - `latitude`/`longitude` set the location; a new `address` without them is looked up again.
-eventsRouter.patch("/:id", eventImagesUpload, async (req, res) => {
+eventsRouter.patch("/:id", requireEditAccess, eventImagesUpload, async (req, res) => {
   const result = await withUploadCleanup(req, async () => {
     const { removePictureIds = [], removeThumbnail, latitude, longitude, ...patch } = updateEventSchema.parse(
       req.body ?? {},
@@ -144,7 +145,7 @@ eventsRouter.patch("/:id", eventImagesUpload, async (req, res) => {
 });
 
 // DELETE /api/events/:id
-eventsRouter.delete("/:id", async (req, res) => {
+eventsRouter.delete("/:id", requireEditAccess, async (req, res) => {
   const files = repo.deleteEvent(eventId(req));
   if (!files) throw new HttpError(404, "Event not found");
   await deleteUploads(files);
@@ -152,7 +153,7 @@ eventsRouter.delete("/:id", async (req, res) => {
 });
 
 // DELETE /api/events/:id/pictures/:pictureId
-eventsRouter.delete("/:id/pictures/:pictureId", async (req, res) => {
+eventsRouter.delete("/:id/pictures/:pictureId", requireEditAccess, async (req, res) => {
   const id = eventId(req);
   const pictureId = String(req.params.pictureId);
   const existing = repo.getEvent(id);

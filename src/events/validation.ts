@@ -86,6 +86,8 @@ export const updateEventSchema = z
   .object(eventFields)
   .partial()
   .extend({
+    /** Like on create, the list may be emptied ("" or []). */
+    freeItems: z.preprocess(toStringList, z.array(z.string().trim().min(1).max(100)).max(50)).optional(),
     /** IDs of existing pictures to delete. */
     removePictureIds: z.preprocess(toStringList, z.array(z.string().min(1)).max(100)).optional(),
     /** Clear the thumbnail without uploading a new one. */

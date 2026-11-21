@@ -145,6 +145,56 @@
         outline: 3px solid rgba(79, 70, 229, 0.35);
         outline-offset: 2px;
       }
+      /* Edit / Remove under "Take me there" (only when editing is allowed). */
+      .event-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .event-actions a,
+      .event-actions button {
+        flex: 1;
+        padding: 6px 10px;
+        border: 1px solid #d1d5db;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #1f2937;
+        font: 600 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+        text-align: center;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .event-actions a:hover,
+      .event-actions button:hover {
+        background: #f3f4f6;
+      }
+      .event-actions .danger {
+        border-color: #fecaca;
+        color: #b91c1c;
+      }
+      .event-actions .danger.confirm {
+        border-color: #dc2626;
+        background: #dc2626;
+        color: #ffffff;
+      }
+      .event-actions button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .event-popup .action-note {
+        margin: 6px 0 0;
+        font-size: 12px;
+      }
+      .event-popup .action-note.error {
+        color: #b91c1c;
+      }
+      /* "Back to McGill" map button, under the zoom buttons. */
+      .home-control a {
+        width: auto !important;
+        padding: 0 8px;
+        font: 600 12px/30px system-ui, -apple-system, "Segoe UI", sans-serif;
+        white-space: nowrap;
+      }
 
       /* ---- Route on the map ---- */
       .route-flow {
@@ -487,7 +537,7 @@
       <h1>Free events in downtown Montreal</h1>
       <span id="game-clock" title="Game time: townspeople follow their routines by this clock">Mon 8:00 AM</span>
       <span id="map-status">Loading events…</span>
-      <a href="/add-event.html">Add event</a>
+      <a href="/add-event.html" id="add-event-link">Add event</a>
       <a href="/area-editor.html">Edit area</a>
     </header>
     <div id="map"></div>
@@ -501,6 +551,7 @@
     <script src="/js/route-guide.js"></script>
     <script src="/js/area-data.js"></script>
     <script src="/js/area.js"></script>
+    <script src="/js/admin.js"></script>
     <script src="/js/map.js"></script>
   </body>
 </html>

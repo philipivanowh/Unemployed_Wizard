@@ -6,6 +6,7 @@ import { config } from "./config.ts";
 import { HttpError } from "./errors.ts";
 import { eventsRouter } from "./events/routes.ts";
 import { geocodeRouter } from "./geocode-route.ts";
+import { settingsRouter } from "./settings-route.ts";
 import { walkwaysRouter } from "./walkways.ts";
 
 export function createApp() {
@@ -36,6 +37,8 @@ export function createApp() {
         "DELETE /api/events/:id/pictures/:pictureId",
         "GET    /api/walkways?south=&west=&north=&east=",
         "GET    /api/geocode?q=address",
+        "GET    /api/settings",
+        "PUT    /api/settings   (admin: X-Admin-Key header)",
         "GET    /api/health",
       ],
     });
@@ -48,6 +51,7 @@ export function createApp() {
   app.use("/api/events", eventsRouter);
   app.use("/api/walkways", walkwaysRouter);
   app.use("/api/geocode", geocodeRouter);
+  app.use("/api/settings", settingsRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Not found" });

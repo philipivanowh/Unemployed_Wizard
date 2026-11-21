@@ -30,14 +30,21 @@ Environment variables (all optional):
 | `GEOCODER_USER_AGENT` | `UnemployedWizard/0.1 (…)` | Identifies the app to the geocoder; add contact info for production |
 | `GEOCODER_BBOX` | `-73.98,45.40,-73.47,45.71` | Only match places in this box (`minLon,minLat,maxLon,maxLat`; Montreal by default; empty = anywhere) |
 | `GEOCODER_CENTER` | `45.5048,-73.5772` | When several places match, use the one nearest this point (`lat,lon`; McGill by default) |
+| `ADMIN_KEY` | generated, saved in the database | Key that unlocks the admin controls (see [Turning editing on and off](#turning-editing-on-and-off)) |
 | `OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass server for walkway data (`off` disables it) |
 
 ## Frontend
 
-- `http://localhost:3000/`: upcoming events in the downtown area on an OpenStreetMap map drawn with Leaflet
-  (`src/frontend/map.ts`). Set `MAP_ROTATION` (degrees, clockwise) at the top of `map.ts` to rotate it.
-  Rotation uses the [leaflet-rotate](https://github.com/Raruto/leaflet-rotate) add-on, which is licensed **GPL-3.0**.
-- **Townspeople**: pixel-art people walk the area's real paths and streets on a daily routine.
+- `http://localhost:3000/`: upcoming events on an OpenStreetMap map drawn with Leaflet (`src/frontend/map.ts`).
+  It opens on the McGill area, and you can pan and zoom anywhere. Every event with a location gets a pin.
+  **Back to McGill** (under the zoom buttons) returns to 845 Sherbrooke St W. Set `MAP_ROTATION` (degrees,
+  clockwise) at the top of `map.ts` to rotate it. Rotation uses the
+  [leaflet-rotate](https://github.com/Raruto/leaflet-rotate) add-on, which is licensed **GPL-3.0**.
+- **Edit / Remove**: each event's popup has an **Edit** button, which opens the event in the add-event form, and a
+  **Remove** button, which asks once more before deleting. Both appear only when editing is allowed
+  (see [Turning editing on and off](#turning-editing-on-and-off)).
+- **Townspeople**: pixel-art people walk the area's real paths and streets on a daily routine. They stay inside the
+  area outline (`area-data.ts`), which is where walkway data is loaded. Crowds only gather at events inside it.
   - `npc.ts`: the sprites. Each person is built from 10 features (skin, eyes, hair, facial hair, top, bottoms,
     shoes, hat, glasses, bag), each with several styles and many colors, listed in `NPC_FEATURES`. `NPC_SIZE` scales them.
   - `routine.ts`: the clock in the header and each person's day: out in the morning, lunch, an afternoon
@@ -54,7 +61,27 @@ Environment variables (all optional):
 - `http://localhost:3000/add-event.html`: a form to add an event (`src/frontend/add-event.ts`). Event name, date,
   start time and address are required. End time, room, what's free, description and a photo are optional. After you
   enter the address, a pin on a small map shows where it was found, and you can drag it or click to fix the spot.
-  The page then says whether the event will show on the map, and links to it.
+  The page then says whether the event will show on the map, and links to it. Opened as
+  `/add-event.html?edit=<id>` (the popup's **Edit** button), it loads that event and **Save changes** updates it.
+  Clearing a field (end time, room, description, free items) or removing the photo clears it on the event.
+
+### Turning editing on and off
+
+Visitors can add, edit and remove events by default. An admin can switch that off for everyone else:
+
+1. At startup the server prints an admin link: `Admin: http://localhost:3000/?admin=<key>`. Open it once. The key
+   is saved in that browser and removed from the address bar.
+2. An **Admin** bar appears at the bottom of the map and the add-event page. Its **On/Off** button switches visitor
+   editing. When it's off, visitors don't see the Edit/Remove buttons or the "Add event" link, and the add-event
+   page tells them it's turned off.
+3. Admins can always add, edit and remove, whatever the switch says. **Exit admin** (or opening `?admin=off`)
+   forgets the key in that browser.
+
+The switch is enforced by the server, not just hidden in the page. When it's off, `POST`, `PATCH` and `DELETE` on
+`/api/events` answer `403` unless the request has the admin key in an `X-Admin-Key` header. The setting is saved in
+the database, so it survives restarts. The key is generated on first start and saved in the database. To pick your
+own key, set `ADMIN_KEY`; the server then doesn't print it. Anyone with the key has full control, so share it only
+with people who should moderate events.
 - `http://localhost:3000/area-editor.html`: edit the map's area outline and the NPC's spots on a map, then paste
   the generated code into `src/frontend/area-data.ts`.
 - `http://localhost:3000/api`: a list of the API endpoints.
@@ -129,6 +156,11 @@ address can't be found, both coordinates are `null`. At startup the server retri
 | `PATCH`  | `/api/events/:id`                       | Edit an event (partial)         |
 | `DELETE` | `/api/events/:id`                       | Delete an event and its images  |
 | `DELETE` | `/api/events/:id/pictures/:pictureId`   | Delete one extra picture        |
+| `GET`    | `/api/settings`                         | `{ publicEditing, admin, canEdit }` for the caller |
+| `PUT`    | `/api/settings`                         | Admin only: `{ "publicEditing": true \| false }` |
+
+When visitor editing is off, the `POST`, `PATCH` and `DELETE` routes above need the admin key in an
+`X-Admin-Key` header and otherwise answer `403`.
 
 `POST` and `PATCH` accept `multipart/form-data` (needed for images) or JSON.
 
