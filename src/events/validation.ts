@@ -46,6 +46,10 @@ const timeField = z
   .trim()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected a 24-hour time as HH:MM");
 
+/** Optional number within [min, max]; an empty form value means null (no location). */
+const coordinate = (min: number, max: number) =>
+  z.preprocess(emptyToNull, z.coerce.number().min(min).max(max).nullable());
+
 const requiredText = (max: number) => z.string().trim().min(1, "Required").max(max);
 
 const eventFields = {
@@ -63,6 +67,8 @@ const eventFields = {
       .max(50),
   ),
   description: z.string().trim().max(5000),
+  latitude: coordinate(-90, 90),
+  longitude: coordinate(-180, 180),
 };
 
 export const createEventSchema = z.object({
@@ -70,6 +76,8 @@ export const createEventSchema = z.object({
   endTime: eventFields.endTime.optional(),
   roomNumber: eventFields.roomNumber.optional(),
   description: eventFields.description.optional(),
+  latitude: eventFields.latitude.optional(),
+  longitude: eventFields.longitude.optional(),
 });
 
 export const updateEventSchema = z

@@ -22,6 +22,24 @@ Environment variables (all optional):
 | `DB_PATH`     | `data/app.db`  | SQLite database file            |
 | `UPLOAD_DIR`  | `uploads`      | Where uploaded images are saved |
 | `CORS_ORIGIN` | `*`            | Allowed CORS origin             |
+| `GEOCODER_URL` | `https://nominatim.openstreetmap.org` | Nominatim server for address lookups (`off` disables) |
+| `GEOCODER_USER_AGENT` | `UnemployedWizard/0.1 (…)` | Identifies the app to Nominatim; add contact info for production |
+
+## Frontend
+
+- `http://localhost:3000/`: the canvas (`src/frontend/world.ts`, `npc.ts`).
+- `http://localhost:3000/map.html`: upcoming events on an OpenStreetMap map, drawn with Leaflet (`src/frontend/map.ts`).
+
+`src/frontend/*.ts` compiles to `public/js/`, and `npm run dev` rebuilds it as you edit.
+
+## Locations
+
+Events have `latitude` and `longitude`. If you don't send them, the server looks up the `address` with
+[Nominatim](https://nominatim.org/) (OpenStreetMap's free geocoder) when the event is created or its address
+changes. Lookups are limited to 1 per second and cached, as Nominatim's usage policy requires. Use full addresses
+with city and state, like `77 Massachusetts Ave, Cambridge, MA`, because a bare street can match the wrong town.
+When an address can't be found, both coordinates are `null`. At startup the server retries events that have
+no location.
 
 ## Event shape
 
@@ -36,6 +54,8 @@ Environment variables (all optional):
   "roomNumber": "B201",
   "freeItems": ["Pizza", "Soda", "T-shirts"],
   "description": "Leftover pizza from the guest lecture.",
+  "latitude": 42.3594,
+  "longitude": -71.0938,
   "thumbnailUrl": "/uploads/1a2b….jpg",
   "pictures": [{ "id": "9e8d…", "url": "/uploads/3c4d….png" }],
   "createdAt": "2026-11-21T17:00:00.000Z",
@@ -61,7 +81,8 @@ Environment variables (all optional):
 `POST` and `PATCH` accept `multipart/form-data` (needed for images) or JSON.
 
 Form fields: `title`, `date`, `startTime`, `endTime`, `address`, `roomNumber`,
-`freeItems`, `description`. You can send `freeItems` as a JSON array (`["Pizza","Soda"]`),
+`freeItems`, `description`, `latitude`, `longitude`. Send `latitude` and `longitude` together, or leave both out
+to look up the address. You can send `freeItems` as a JSON array (`["Pizza","Soda"]`),
 as a comma-separated string (`Pizza, Soda`), or as a repeated field.
 
 File fields: `thumbnail` (one image) and `pictures` (multiple images).

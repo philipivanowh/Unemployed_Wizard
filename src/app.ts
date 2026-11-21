@@ -1,6 +1,7 @@
 import cors from "cors";
 import express, { type ErrorRequestHandler } from "express";
 import multer from "multer";
+import path from "node:path";
 import { ZodError } from "zod";
 import { config } from "./config.js";
 import { HttpError } from "./errors.js";
@@ -13,6 +14,11 @@ export function createApp() {
   app.use(express.json({ limit: "1mb" }));
 
   app.use("/uploads", express.static(config.uploadDir, { index: false, maxAge: "7d" }));
+
+  // Frontend: public/index.html plus compiled scripts in public/js.
+  app.use(express.static(path.resolve("public")));
+  // Leaflet (map library) straight from the npm package.
+  app.use("/vendor/leaflet", express.static(path.resolve("node_modules/leaflet/dist"), { maxAge: "7d" }));
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });

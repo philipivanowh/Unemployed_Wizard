@@ -22,6 +22,8 @@ db.exec(`
     free_items  TEXT NOT NULL DEFAULT '[]', -- JSON array of strings
     description TEXT NOT NULL DEFAULT '',
     thumbnail   TEXT,                    -- filename inside the upload dir
+    latitude    REAL,                    -- from the address, or sent by the client
+    longitude   REAL,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
   );
@@ -36,6 +38,14 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_event_pictures_event ON event_pictures (event_id, position);
 `);
+
+// Databases created before coordinates existed get the new columns added.
+const eventColumns = new Set(
+  (db.prepare("PRAGMA table_info(events)").all() as { name: string }[]).map((c) => c.name),
+);
+for (const column of ["latitude", "longitude"]) {
+  if (!eventColumns.has(column)) db.exec(`ALTER TABLE events ADD COLUMN ${column} REAL`);
+}
 
 /** Run `fn` inside a SQLite transaction (node:sqlite has no built-in helper). */
 export function transaction<T>(fn: () => T): T {

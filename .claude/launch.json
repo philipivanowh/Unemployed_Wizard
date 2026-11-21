@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev",
+      "runtimeExecutable": "/bin/bash",
+      "runtimeArgs": ["-c", "export PATH=\"$HOME/.nvm/versions/node/v26.13.1/bin:$PATH\" && npm run dev"],
+      "port": 3000,
+      "url": "http://localhost:3000"
+    }
+  ]
+}

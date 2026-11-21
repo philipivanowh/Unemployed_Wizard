@@ -1,6 +1,7 @@
 import { Router, type Request } from "express";
 import { config } from "../config.js";
 import { HttpError } from "../errors.js";
+import { geocodeAddress } from "../geocode.js";
 import { deleteUploads, eventImagesUpload, getUploadedImages, uploadUrl } from "../uploads.js";
 import * as repo from "./repository.js";
 import { createEventSchema, listEventsQuerySchema, updateEventSchema } from "./validation.js";
@@ -21,6 +22,15 @@ function assertTimeOrder(startTime: string, endTime: string | null): void {
   if (endTime !== null && endTime <= startTime) {
     throw new HttpError(400, "Validation failed", [
       { path: "endTime", message: "endTime must be after startTime" },
+    ]);
+  }
+}
+
+/** latitude and longitude only make sense together. */
+function assertCoordinatePair(latitude: number | null | undefined, longitude: number | null | undefined): void {
+  if ((latitude === undefined) !== (longitude === undefined) || (latitude === null) !== (longitude === null)) {
+    throw new HttpError(400, "Validation failed", [
+      { path: "latitude", message: "Send latitude and longitude together" },
     ]);
   }
 }
@@ -58,15 +68,22 @@ eventsRouter.get("/:id", (req, res) => {
 
 // POST /api/events  (multipart/form-data or JSON)
 eventsRouter.post("/", eventImagesUpload, async (req, res) => {
-  const event = await withUploadCleanup(req, () => {
-    const input = createEventSchema.parse(req.body ?? {});
+  const event = await withUploadCleanup(req, async () => {
+    const { latitude, longitude, ...input } = createEventSchema.parse(req.body ?? {});
+    assertCoordinatePair(latitude, longitude);
+    assertTimeOrder(input.startTime, input.endTime ?? null);
+
+    // Use coordinates sent by the client, otherwise look the address up.
+    const coords =
+      latitude != null && longitude != null ? { latitude, longitude } : await geocodeAddress(input.address);
     const fields: repo.EventFields = {
       ...input,
       endTime: input.endTime ?? null,
       roomNumber: input.roomNumber ?? null,
       description: input.description ?? "",
+      latitude: coords?.latitude ?? null,
+      longitude: coords?.longitude ?? null,
     };
-    assertTimeOrder(fields.startTime, fields.endTime);
 
     const images = getUploadedImages(req);
     return repo.createEvent(fields, { thumbnail: images.thumbnail ?? null, pictures: images.pictures });
@@ -77,9 +94,13 @@ eventsRouter.post("/", eventImagesUpload, async (req, res) => {
 // PATCH /api/events/:id  (multipart/form-data or JSON; all fields optional)
 // - `thumbnail` file replaces the thumbnail; `removeThumbnail=true` clears it.
 // - `pictures` files are appended; `removePictureIds` deletes existing ones.
+// - `latitude`/`longitude` set the location; a new `address` without them is looked up again.
 eventsRouter.patch("/:id", eventImagesUpload, async (req, res) => {
-  const result = await withUploadCleanup(req, () => {
-    const { removePictureIds = [], removeThumbnail, ...patch } = updateEventSchema.parse(req.body ?? {});
+  const result = await withUploadCleanup(req, async () => {
+    const { removePictureIds = [], removeThumbnail, latitude, longitude, ...patch } = updateEventSchema.parse(
+      req.body ?? {},
+    );
+    assertCoordinatePair(latitude, longitude);
     const id = eventId(req);
     const existing = repo.getEvent(id);
     if (!existing) throw new HttpError(404, "Event not found");
@@ -101,7 +122,15 @@ eventsRouter.patch("/:id", eventImagesUpload, async (req, res) => {
       patch.endTime !== undefined ? patch.endTime : existing.endTime,
     );
 
-    return repo.updateEvent(id, patch, {
+    let location: Partial<Pick<repo.EventFields, "latitude" | "longitude">> = {};
+    if (latitude !== undefined) {
+      location = { latitude, longitude };
+    } else if (patch.address !== undefined && patch.address !== existing.address) {
+      const coords = await geocodeAddress(patch.address);
+      location = { latitude: coords?.latitude ?? null, longitude: coords?.longitude ?? null };
+    }
+
+    return repo.updateEvent(id, { ...patch, ...location }, {
       thumbnail: images.thumbnail ?? (removeThumbnail ? null : undefined),
       addPictures: images.pictures,
       removePictureIds,

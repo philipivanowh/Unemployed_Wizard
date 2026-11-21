@@ -11,6 +11,8 @@ export interface EventFields {
   roomNumber: string | null;
   freeItems: string[];
   description: string;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 export interface Picture {
@@ -37,6 +39,8 @@ interface EventRow {
   free_items: string;
   description: string;
   thumbnail: string | null;
+  latitude: number | null;
+  longitude: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -52,12 +56,20 @@ const stmt = {
   getEvent: db.prepare("SELECT * FROM events WHERE id = ?"),
   insertEvent: db.prepare(`
     INSERT INTO events (id, title, date, start_time, end_time, address, room_number,
-                        free_items, description, thumbnail, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+                        free_items, description, thumbnail, latitude, longitude, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
   updateEvent: db.prepare(`
     UPDATE events SET title = ?, date = ?, start_time = ?, end_time = ?, address = ?,
-                      room_number = ?, free_items = ?, description = ?, thumbnail = ?, updated_at = ?
+                      room_number = ?, free_items = ?, description = ?, thumbnail = ?,
+                      latitude = ?, longitude = ?, updated_at = ?
     WHERE id = ?`),
+  missingCoordinates: db.prepare(
+    "SELECT id, address FROM events WHERE latitude IS NULL OR longitude IS NULL ORDER BY date, start_time",
+  ),
+  // Only fills coordinates if the address hasn't changed since it was looked up.
+  setCoordinates: db.prepare(
+    "UPDATE events SET latitude = ?, longitude = ? WHERE id = ? AND address = ? AND latitude IS NULL",
+  ),
   deleteEvent: db.prepare("DELETE FROM events WHERE id = ?"),
   picturesForEvent: db.prepare(
     "SELECT * FROM event_pictures WHERE event_id = ? ORDER BY position, created_at",
@@ -82,6 +94,8 @@ function toRecord(row: EventRow, pictures: PictureRow[]): EventRecord {
     roomNumber: row.room_number,
     freeItems: JSON.parse(row.free_items) as string[],
     description: row.description,
+    latitude: row.latitude,
+    longitude: row.longitude,
     thumbnail: row.thumbnail,
     pictures: pictures.map((p) => ({ id: p.id, filename: p.filename })),
     createdAt: row.created_at,
@@ -167,6 +181,8 @@ export function createEvent(
       JSON.stringify(fields.freeItems),
       fields.description,
       images.thumbnail,
+      fields.latitude,
+      fields.longitude,
       now,
       now,
     );
@@ -219,6 +235,8 @@ export function updateEvent(
       JSON.stringify(merged.freeItems),
       merged.description,
       thumbnail,
+      merged.latitude,
+      merged.longitude,
       now,
       id,
     );
@@ -243,4 +261,14 @@ export function deleteEvent(id: string): string[] | null {
   if (!existing) return null;
   stmt.deleteEvent.run(id); // pictures cascade
   return [...(existing.thumbnail ? [existing.thumbnail] : []), ...existing.pictures.map((p) => p.filename)];
+}
+
+/** Events that have no coordinates yet. */
+export function eventsMissingCoordinates(): { id: string; address: string }[] {
+  return stmt.missingCoordinates.all() as unknown as { id: string; address: string }[];
+}
+
+/** Stores looked-up coordinates unless the event's address changed in the meantime. */
+export function setCoordinates(id: string, address: string, latitude: number, longitude: number): void {
+  stmt.setCoordinates.run(latitude, longitude, id, address);
 }
