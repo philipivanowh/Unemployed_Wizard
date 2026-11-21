@@ -1,5 +1,5 @@
-import { geocodeAddress, geocodingEnabled } from "../geocode.js";
-import * as repo from "./repository.js";
+import { geocodeAddress, geocodingEnabled } from "../geocode.ts";
+import * as repo from "./repository.ts";
 
 /**
  * Looks up coordinates for events saved without them (for example, created before

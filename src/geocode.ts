@@ -1,4 +1,4 @@
-import { config } from "./config.js";
+import { config } from "./config.ts";
 
 // Address -> coordinates using OpenStreetMap's Nominatim.
 // Usage policy (https://operations.osmfoundation.org/policies/nominatim/):

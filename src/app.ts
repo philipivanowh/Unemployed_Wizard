@@ -1,11 +1,10 @@
 import cors from "cors";
 import express, { type ErrorRequestHandler } from "express";
 import multer from "multer";
-import path from "node:path";
 import { ZodError } from "zod";
-import { config } from "./config.js";
-import { HttpError } from "./errors.js";
-import { eventsRouter } from "./events/routes.js";
+import { config } from "./config.ts";
+import { HttpError } from "./errors.ts";
+import { eventsRouter } from "./events/routes.ts";
 
 export function createApp() {
   const app = express();
@@ -15,10 +14,26 @@ export function createApp() {
 
   app.use("/uploads", express.static(config.uploadDir, { index: false, maxAge: "7d" }));
 
-  // Frontend: public/index.html plus compiled scripts in public/js.
-  app.use(express.static(path.resolve("public")));
+  // Frontend: public/index.html (canvas), public/map.html, and compiled scripts in public/js.
+  app.use(express.static(config.publicDir));
   // Leaflet (map library) straight from the npm package.
-  app.use("/vendor/leaflet", express.static(path.resolve("node_modules/leaflet/dist"), { maxAge: "7d" }));
+  app.use("/vendor/leaflet", express.static(config.leafletDir, { maxAge: "7d" }));
+
+  // "/" is the frontend, so the API overview lives at /api.
+  app.get("/api", (_req, res) => {
+    res.json({
+      name: "Free stuff events API",
+      endpoints: [
+        "GET    /api/events?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=50&offset=0",
+        "GET    /api/events/:id",
+        "POST   /api/events",
+        "PATCH  /api/events/:id",
+        "DELETE /api/events/:id",
+        "DELETE /api/events/:id/pictures/:pictureId",
+        "GET    /api/health",
+      ],
+    });
+  });
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });

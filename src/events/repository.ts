@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { SQLInputValue } from "node:sqlite";
-import { db, transaction } from "../db.js";
+import { db, transaction } from "../db.ts";
 
 export interface EventFields {
   title: string;

@@ -1,9 +1,15 @@
 import path from "node:path";
 
+/** Project root (this file lives in src/ or dist/), so paths don't depend on the cwd. */
+const root = path.resolve(import.meta.dirname, "..");
+
 export const config = {
   port: Number(process.env.PORT ?? 3000),
-  dbPath: path.resolve(process.env.DB_PATH ?? "data/app.db"),
-  uploadDir: path.resolve(process.env.UPLOAD_DIR ?? "uploads"),
+  dbPath: path.resolve(root, process.env.DB_PATH ?? "data/app.db"),
+  uploadDir: path.resolve(root, process.env.UPLOAD_DIR ?? "uploads"),
+  /** Frontend pages and compiled scripts. */
+  publicDir: path.join(root, "public"),
+  leafletDir: path.join(root, "node_modules", "leaflet", "dist"),
   corsOrigin: process.env.CORS_ORIGIN ?? "*",
   /** Nominatim server that turns addresses into coordinates. "off" disables geocoding. */
   geocoderUrl: process.env.GEOCODER_URL ?? "https://nominatim.openstreetmap.org",
