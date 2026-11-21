@@ -35,7 +35,7 @@ export function createApp() {
         "DELETE /api/events/:id",
         "DELETE /api/events/:id/pictures/:pictureId",
         "GET    /api/walkways?south=&west=&north=&east=",
-        "GET    /api/geocode?q=address&viewbox=west,south,east,north",
+        "GET    /api/geocode?q=address",
         "GET    /api/health",
       ],
     });

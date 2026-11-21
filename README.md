@@ -26,9 +26,11 @@ Environment variables (all optional):
 | `DB_PATH`     | `data/app.db`  | SQLite database file            |
 | `UPLOAD_DIR`  | `uploads`      | Where uploaded images are saved |
 | `CORS_ORIGIN` | `*`            | Allowed CORS origin             |
-| `GEOCODER_URL` | `https://nominatim.openstreetmap.org` | Nominatim server for address lookups (`off` disables) |
+| `GEOCODER_URL` | `https://photon.komoot.io` | Photon server for address lookups (`off` disables) |
+| `GEOCODER_USER_AGENT` | `UnemployedWizard/0.1 (…)` | Identifies the app to the geocoder; add contact info for production |
+| `GEOCODER_BBOX` | `-73.98,45.40,-73.47,45.71` | Only match places in this box (`minLon,minLat,maxLon,maxLat`; Montreal by default; empty = anywhere) |
+| `GEOCODER_CENTER` | `45.5048,-73.5772` | When several places match, use the one nearest this point (`lat,lon`; McGill by default) |
 | `OVERPASS_URL` | `https://overpass-api.de/api/interpreter` | Overpass server for walkway data (`off` disables it) |
-| `GEOCODER_USER_AGENT` | `UnemployedWizard/0.1 (…)` | Identifies the app to Nominatim; add contact info for production |
 
 ## Frontend
 
@@ -59,10 +61,21 @@ Environment variables (all optional):
 
 ### Address lookup
 
-`GET /api/geocode?q=<address>&viewbox=west,south,east,north` returns `{ latitude, longitude, label }` for an
-address, or 404 if it can't be found. `viewbox` is optional: it makes results inside that box preferred, but
-places outside it can still be found. Lookups share the Nominatim queue (1 per second, cached). Call it when a
-field is finished, not on every keystroke.
+`GET /api/geocode?q=<address>` returns `{ latitude, longitude, label }` for an address, or 404 if it can't be found.
+The same lookup runs when an event is saved without coordinates. It uses [Photon](https://photon.komoot.io), a
+free geocoder built on OpenStreetMap data, and works like this:
+
+- Only places in Montreal are matched (`GEOCODER_BBOX`), so "1 Main St" can't land in another country.
+- OpenStreetMap stores Montreal streets under their French names, so English-style addresses are also searched in
+  French form: `845 Sherbrooke St W` becomes `845 rue Sherbrooke Ouest`. Building names like `Trottier Building`
+  work too.
+- If the address has a house number, only buildings with that number count. Matches on the right street come
+  first, and among equally good matches **the one nearest McGill wins** (`GEOCODER_CENTER`). If no building has
+  that number, the address counts as not found, because a pin somewhere along a long street would be worse than
+  no pin.
+
+Lookups run one at a time, at most one per second, and are cached. Call it when a field is finished, not on every
+keystroke.
 
 ### Walkways
 
@@ -75,12 +88,9 @@ fetched once. After you change the area, the first page load takes up to about 3
 
 ## Locations
 
-Events have `latitude` and `longitude`. If you don't send them, the server looks up the `address` with
-[Nominatim](https://nominatim.org/) (OpenStreetMap's free geocoder) when the event is created or its address
-changes. Lookups are limited to 1 per second and cached, as Nominatim's usage policy requires. Use full addresses
-with city and state, like `77 Massachusetts Ave, Cambridge, MA`, because a bare street can match the wrong town.
-When an address can't be found, both coordinates are `null`. At startup the server retries events that have
-no location.
+Events have `latitude` and `longitude`. If you don't send them, the server looks up the `address` when the event
+is created or its address changes (see [Address lookup](#address-lookup): Montreal only, nearest McGill). When an
+address can't be found, both coordinates are `null`. At startup the server retries events that have no location.
 
 ## Event shape
 

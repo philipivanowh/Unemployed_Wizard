@@ -274,10 +274,12 @@ function updateLive(): void {
 const NPC_COUNT = 14;
 const NPC_MAP_ZOOM = 16;
 
-// Own pane: above the pins (600), below popups (700). It sits beside the pins in
-// leaflet-rotate's "norotatePane" so people stay upright on a rotated map.
+// Own pane: above the live rings (590) but below the event pins (600), so people never
+// cover a pin. It sits beside the pins in leaflet-rotate's "norotatePane" so people
+// stay upright on a rotated map. People are scenery: nothing on them reacts to the
+// mouse, so clicks and hovers go straight through to the pins and the map.
 const npcPane = eventMap.createPane("npc", eventMap.getPane("norotatePane"));
-npcPane.style.zIndex = "650";
+npcPane.style.zIndex = "595";
 npcPane.style.pointerEvents = "none";
 
 // While Leaflet animates a zoom (about 250 ms) it moves the markers itself; moving them
@@ -294,7 +296,6 @@ interface WalkerView {
   marker: L.Marker;
   ctx: CanvasRenderingContext2D;
   lastFrame: string;
-  lastStatus: string;
 }
 const walkers: WalkerView[] = [];
 
@@ -379,11 +380,10 @@ function addWalker(walker: Walker): void {
       iconAnchor: [npcAnchor.x, npcAnchor.y],
     }),
     pane: "npc",
+    interactive: false, // no clicks, hovers or cursor change
     keyboard: false,
-  })
-    .bindTooltip("", { direction: "top", offset: [0, -npcAnchor.y + 2], className: "npc-tooltip" })
-    .addTo(eventMap);
-  walkers.push({ walker, marker, ctx, lastFrame: "", lastStatus: "" });
+  }).addTo(eventMap);
+  walkers.push({ walker, marker, ctx, lastFrame: "" });
 }
 
 async function startPeople(): Promise<void> {
@@ -433,18 +433,9 @@ function frame(now: number): void {
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
       ctx.setTransform(npcDpr, 0, 0, npcDpr, 0, 0);
       npc.draw(ctx, npcAnchor);
-      // Hidden people (at home) shouldn't catch the mouse.
+      // People at home are hidden.
       const el = marker.getElement();
       if (el) el.style.visibility = npc.opacity > 0 ? "visible" : "hidden";
-    }
-    if (walker.status !== view.lastStatus) {
-      view.lastStatus = walker.status;
-      // Built with textContent: statuses can include event titles, which users type in.
-      const label = document.createElement("span");
-      const name = document.createElement("b");
-      name.textContent = walker.name;
-      label.append(name, ` · ${walker.status}`);
-      marker.setTooltipContent(label);
     }
   }
 

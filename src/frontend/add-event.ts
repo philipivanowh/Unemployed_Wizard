@@ -648,17 +648,13 @@
   pinMap.on("click", (e: L.LeafletMouseEvent) => setPin(e.latlng, "manual"));
   clearPinButton.addEventListener("click", clearPin);
 
-  /** Where the address lands, preferring the map's area. Runs when the address field is done. */
+  /** Where the address lands in Montreal (nearest McGill if several match). Runs when the address field is done. */
   async function lookUpAddress(address: string): Promise<void> {
     if (!address || address === lookedUpAddress) return;
     if (pin && pinSource === "manual") return; // never move a pin the user placed
     lookedUpAddress = address;
     describePin("Looking up the address…", true);
     const params = new URLSearchParams({ q: address });
-    if (areaPoints.length >= 2) {
-      const b = L.latLngBounds(areaPoints).pad(0.5);
-      params.set("viewbox", [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map((n) => n.toFixed(4)).join(","));
-    }
     try {
       const res = await fetch(`/api/geocode?${params}`);
       if (address !== addressInput.value.trim()) return; // the address changed while we waited

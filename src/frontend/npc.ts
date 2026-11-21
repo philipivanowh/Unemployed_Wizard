@@ -7,11 +7,12 @@
 // Loaded as a plain <script> before routine.ts and map.ts, so everything here is global.
 
 /**
- * Overall size of every NPC: 1 is normal (one art pixel = one screen pixel, so a
+ * Overall size of every NPC: 1 is full size (one art pixel = one screen pixel, so a
  * person is 32 px tall), 2 is twice as big, 0.5 is half. Whole numbers keep the
- * pixel art perfectly even.
+ * pixel art perfectly even; in-between sizes drop or double a few art pixels.
+ * 0.75 (24 px tall) keeps people small next to the event pins.
  */
-const NPC_SIZE = 1;
+const NPC_SIZE = 0.75;
 
 type NpcDirection = "down" | "up" | "left" | "right";
 
