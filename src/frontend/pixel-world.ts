@@ -156,6 +156,9 @@ function topperRect(b: { w: number; h: number }, img: { width: number; height: n
 /** Label zooms: streets from LABEL_STREET_ZOOM, building names from LABEL_BUILDING_ZOOM. */
 const LABEL_STREET_ZOOM = 17;
 const LABEL_BUILDING_ZOOM = 18;
+/** Label text size in CSS pixels: never smaller than LABEL_MIN_PX, up to LABEL_MAX_PX zoomed in. */
+const LABEL_MIN_PX = 12;
+const LABEL_MAX_PX = 16;
 /** The same street's name is never repeated closer than this many screen pixels. */
 const LABEL_REPEAT_PX = 420;
 
@@ -164,21 +167,26 @@ const LABEL_REPEAT_PX = 420;
  * given a 1 px dark outline so it reads on grass, roofs and asphalt alike. Vertical labels are
  * turned a quarter turn, reading bottom to top.
  */
-function pixelLabel(text: string, colour: string, vertical: boolean): HTMLCanvasElement {
-  const font = "600 11px ui-sans-serif, system-ui, -apple-system, sans-serif";
+function pixelLabel(text: string, colour: string, vertical: boolean, fontPx: number): HTMLCanvasElement {
+  const font = `700 ${fontPx}px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif`;
+  const spacing = fontPx >= 13 ? "1px" : "0.5px";
   const mctx = pixelCanvas(1, 1)[1];
   mctx.font = font;
-  const w = Math.ceil(mctx.measureText(text).width) + 4;
-  const h = 15;
+  mctx.letterSpacing = spacing;
+  const w = Math.ceil(mctx.measureText(text).width) + 6;
+  const h = fontPx + 7;
   const [c, ctx] = pixelCanvas(w, h);
   ctx.font = font;
+  ctx.letterSpacing = spacing;
   ctx.textBaseline = "middle";
   ctx.fillStyle = colour;
-  ctx.fillText(text, 2, h / 2 + 0.5);
+  ctx.fillText(text, 3, h / 2);
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
+  // Hard pixels: a lowish cut-off keeps thin strokes whole instead of breaking them up.
   const solid = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) solid[i] = d[i * 4 + 3]! >= 110 ? 1 : 0;
+  for (let i = 0; i < w * h; i++) solid[i] = d[i * 4 + 3]! >= 80 ? 1 : 0;
+  const at = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && solid[y * w + x] === 1;
   const [cr, cg, cb] = pixelHex(`${colour}ff`);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -187,18 +195,12 @@ function pixelLabel(text: string, colour: string, vertical: boolean): HTMLCanvas
         d.set([cr, cg, cb, 255], i * 4);
         continue;
       }
-      let edge = false;
-      for (let dy = -1; dy <= 1 && !edge; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx >= 0 && ny >= 0 && nx < w && ny < h && solid[ny * w + nx]) {
-            edge = true;
-            break;
-          }
-        }
-      }
-      d.set(edge ? [46, 34, 47, 255] : [0, 0, 0, 0], i * 4);
+      // A 1 px dark outline all round, plus a shadow pixel down and to the right (light from
+      // the top-left, like the rest of the art), so the text stands off grass, roofs and roads.
+      let ring = false;
+      for (let dy = -1; dy <= 1 && !ring; dy++) for (let dx = -1; dx <= 1 && !ring; dx++) ring = (dx !== 0 || dy !== 0) && at(x + dx, y + dy);
+      const shadow = !ring && (at(x - 1, y - 2) || at(x - 2, y - 2) || at(x - 2, y - 1));
+      d.set(ring ? [46, 34, 47, 255] : shadow ? [46, 34, 47, 150] : [0, 0, 0, 0], i * 4);
     }
   }
   ctx.putImageData(img, 0, 0);
@@ -939,11 +941,11 @@ class PixelWorld {
     this.streetLabels = [...byName.values()].filter((l) => l.spots.length > 0).sort((a, b) => a.rank - b.rank);
   }
 
-  private label(text: string, colour: string, vertical: boolean): HTMLCanvasElement {
-    const key = `${colour}|${vertical ? "v" : "h"}|${text}`;
+  private label(text: string, colour: string, vertical: boolean, fontPx: number): HTMLCanvasElement {
+    const key = `${fontPx}|${colour}|${vertical ? "v" : "h"}|${text}`;
     let c = this.labelCache.get(key);
     if (!c) {
-      c = pixelLabel(text, colour, vertical);
+      c = pixelLabel(text, colour, vertical, fontPx);
       this.labelCache.set(key, c);
     }
     return c;
@@ -955,7 +957,12 @@ class PixelWorld {
    */
   private drawLabels(ctx: CanvasRenderingContext2D, rsx: number, rsy: number, s: number, dpr: number, zoom: number, cw: number, ch: number): void {
     if (zoom < LABEL_STREET_ZOOM) return;
-    const k = Math.max(1, Math.round(dpr * 1.4)); // whole screen pixels per label pixel keeps the text crisp
+    // Text size on screen (CSS px): LABEL_MIN_PX at the zoom labels appear, growing to
+    // LABEL_MAX_PX when zoomed in, never smaller. Drawn at that size, then scaled by a whole
+    // number of screen pixels so the pixels stay crisp.
+    const cssPx = Math.min(LABEL_MAX_PX, LABEL_MIN_PX + (zoom - LABEL_STREET_ZOOM) * 2);
+    const k = Math.max(1, Math.round(dpr));
+    const fontPx = Math.max(LABEL_MIN_PX, Math.round((cssPx * dpr) / k));
     const placed: [number, number, number, number][] = [];
     const free = (x0: number, y0: number, x1: number, y1: number) => placed.every(([a, b, c, d]) => x1 < a || x0 > c || y1 < b || y0 > d);
     const put = (img: HTMLCanvasElement, cx: number, cy: number) => {
@@ -977,7 +984,7 @@ class PixelWorld {
         const sy = rsy + spot.y * s;
         if (sx < -200 || sy < -200 || sx > cw + 200 || sy > ch + 200) continue;
         if (done.some(([x, y]) => Math.hypot(x - sx, y - sy) < repeat)) continue;
-        if (put(this.label(street.name, "#ffffff", spot.vertical), sx, sy)) done.push([sx, sy]);
+        if (put(this.label(street.name, "#ffffff", spot.vertical, fontPx), sx, sy)) done.push([sx, sy]);
       }
     }
     if (zoom < LABEL_BUILDING_ZOOM) return;
@@ -987,7 +994,7 @@ class PixelWorld {
       // topper, so the cupola or tower stays visible.
       const topper = this.toppers.get(b.name);
       const at = topper ? b.y + Math.max(8, topperRect(b, topper.img, topper.scale).y - 10) : b.y + b.h * 0.35;
-      put(this.label(b.name, "#fbff86", false), rsx + (b.x + b.w / 2) * s, rsy + at * s);
+      put(this.label(b.name, "#fbff86", false, Math.max(LABEL_MIN_PX, fontPx - 1)), rsx + (b.x + b.w / 2) * s, rsy + at * s);
     }
   }
 
