@@ -142,7 +142,7 @@
       this.list.hidden = true;
       const chevron = icon("chevron", 16);
       chevron.classList.add("chevron");
-      this.root.append(icon("clock"), this.input, chevron, this.list);
+      this.root.append(this.input, chevron, this.list);
       host.replaceWith(this.root);
 
       this.clearButton = null;
@@ -450,7 +450,7 @@
     const box = document.getElementById(`${name}-error`);
     if (box) {
       box.replaceChildren();
-      if (message) box.append(icon("alert", 14), el("span", message));
+      if (message) box.append(el("span", message));
     }
     const target = invalidTarget(name);
     if (!target) return;
@@ -468,18 +468,16 @@
     formError.hidden = true;
   }
 
-  function showBanner(box: HTMLElement, badge: string, title: string, body: (Node | string)[]): void {
-    const badgeEl = el("span", undefined, "badge");
-    badgeEl.append(icon(badge, 18));
+  function showBanner(box: HTMLElement, title: string, body: (Node | string)[]): void {
     const content = el("div", undefined, "content");
     content.append(el("h2", title), ...body);
-    box.replaceChildren(badgeEl, content);
+    box.replaceChildren(content);
     box.hidden = false;
     box.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function showFormError(message: string): void {
-    showBanner(formError, "alert", editId ? "Couldn't save yet" : "Couldn't publish yet", [message]);
+    showBanner(formError, editId ? "Couldn't save yet" : "Couldn't publish yet", [message]);
   }
 
   /** Checks in the browser first, so most mistakes show up without a round trip. */
@@ -737,7 +735,6 @@
       li.id = `address-suggestion-${i}`;
       li.setAttribute("role", "option");
       li.setAttribute("aria-selected", "false");
-      li.append(icon(s.kind === "mcgill" ? "door" : "pin", 16));
       const text = el("span", undefined, "suggest-text");
       const main = el("span", s.label, "suggest-label");
       if (s.kind === "mcgill") main.append(el("span", "McGill", "suggest-tag"));
@@ -886,9 +883,7 @@
 
   function setBusy(busy: boolean): void {
     submitButton.disabled = busy || !formEnabled;
-    submitButton.replaceChildren();
-    if (busy) submitButton.append(el("span", undefined, "spinner"), el("span", editId ? "Saving…" : "Publishing…"));
-    else submitButton.append(icon("send"), el("span", editId ? "Save changes" : "Publish event"));
+    submitButton.textContent = busy ? (editId ? "Saving…" : "Publishing…") : editId ? "Save changes" : "Publish event";
   }
 
   form.addEventListener("submit", async (e) => {
@@ -1011,7 +1006,7 @@
       actions.append(another);
     }
     body.push(actions);
-    showBanner(resultBox, "check", editId ? `“${event.title}” is updated` : `“${event.title}” is live`, body);
+    showBanner(resultBox, editId ? `“${event.title}” is updated` : `“${event.title}” is live`, body);
   }
 
   // -------------------------------------------------------------------------
@@ -1073,7 +1068,7 @@
     });
     if (!access.canEdit) {
       setFormEnabled(false);
-      showBanner(formError, "alert", editId ? "Editing is turned off" : "Adding events is turned off", [
+      showBanner(formError, editId ? "Editing is turned off" : "Adding events is turned off", [
         "Adding, editing and removing events is turned off right now. Please check back later.",
       ]);
     }
@@ -1082,8 +1077,6 @@
 
   async function loadEventToEdit(id: string): Promise<void> {
     document.title = "Edit Event";
-    const eyebrow = document.querySelector(".page-head .eyebrow");
-    if (eyebrow?.lastChild) eyebrow.lastChild.textContent = "Edit event";
     const heading = document.querySelector(".page-head h1");
     if (heading) heading.textContent = "Edit event";
     const intro = document.querySelector(".page-head p");
@@ -1097,7 +1090,7 @@
       fillForm((await res.json()) as CreatedEvent);
     } catch (err) {
       setFormEnabled(false);
-      showBanner(formError, "alert", "Couldn't open this event", [err instanceof Error ? err.message : String(err)]);
+      showBanner(formError, "Couldn't open this event", [err instanceof Error ? err.message : String(err)]);
     }
   }
 
