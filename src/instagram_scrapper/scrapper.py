@@ -1,14 +1,16 @@
+"""Instagram scraping library. No web framework in here: import it and call fetch_posts().
+
+    from instagram_scrapper.scrapper import fetch_posts, InstagramError
+    result = fetch_posts("nike", limit=5)
+"""
 import os
 import requests
-from flask import Flask, jsonify, request
 
 # --- Credentials (set here, or via environment variables) -------------------
 IG_USER_ID = os.getenv("IG_USER_ID", "17841466659616214")  # YOUR IG business account ID
-ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "EAAZAuHT9klgMBTPtyLmSXZCVRqaItReuRayBJPMlyC30EB0HAwrHaPuwfkgolVc4ceiAgu8HTWkOvQwLAooG2q8ZBrTMcaRC5f5JLBOpCp17bZCwaQuaOVrOQItiEtjWZBq0J3Weee7uqDafKwe1bmYwT9dI8EJp5eNtl4piyt4PPZAjGEKR9rswCv7bWc4FP43tHwQPZCLukkhtEIIdxame99mXO41NHTRPq5p0HIhjyrSr8pA4ybZAAB4DhDjZAKnTwS5de0sHr9WG2OJ4M")
+ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "EAAZAuHT9klgMBTIRGaqoAX50MA6rH65xZBXtOTRp0qTvrd1F724C9tqsx4pOBIXBhXtCnVA2fepGfgZBYp1MVWZCUoZCYgIEqaYhm53KiZAi7RT4Nt1r5dgM7H3oPfXTWocRufPgInJcMj6aUQBGRkEy87oEBl0vPylJnnQGDRGVBUVNlLqdZCujqHAYZAZBGz4vIMQGKrNkwgVdkp1lk3LPGTkcH1ORSwZCuxSTaQtjm4")
 GRAPH_VERSION = "v27.0"
 # -----------------------------------------------------------------------------
-
-app = Flask(__name__)
 
 MEDIA_FIELDS = (
     "id,caption,media_type,media_product_type,permalink,timestamp,"
@@ -16,6 +18,13 @@ MEDIA_FIELDS = (
 )
 
 
+class InstagramError(Exception):
+    """The Graph API call failed. `status` is the HTTP status to report, `payload` the error body."""
+
+    def __init__(self, status, payload):
+        super().__init__(str(payload))
+        self.status = status
+        self.payload = payload
 
 
 def clean_post(m):
@@ -34,21 +43,22 @@ def clean_post(m):
     }
 
 
-@app.route("/querry")
-@app.route("/query")
-def query():
-    username = request.args.get("username", "").strip().lstrip("@")
+def fetch_posts(username, limit=5, after=None):
+    """Recent posts of a business/creator account.
+
+    Returns {"username", "name", "posts": [...], "next_cursor"}.
+    Raises ValueError for bad arguments and InstagramError if the Graph API fails.
+    """
+    username = (username or "").strip().lstrip("@")
     if not username:
-        return jsonify(error="Missing ?username= parameter"), 400
-
+        raise ValueError("Missing username")
     try:
-        limit = max(1, min(int(request.args.get("limit", 5)), 50))
-    except ValueError:
-        return jsonify(error="limit must be an integer"), 400
+        limit = max(1, min(int(limit), 50))
+    except (TypeError, ValueError):
+        raise ValueError("limit must be an integer")
 
-    after = request.args.get("after")  # pagination cursor from a previous call
     media = f"media.limit({limit})"
-    if after:
+    if after:  # pagination cursor from a previous call
         media += f".after({after})"
 
     fields = f"business_discovery.username({username}){{username,name,{media}{{{MEDIA_FIELDS}}}}}"
@@ -57,21 +67,17 @@ def query():
     try:
         r = requests.get(url, params={"fields": fields, "access_token": ACCESS_TOKEN}, timeout=20)
     except requests.RequestException as e:
-        return jsonify(error=f"Request to Graph API failed: {e}"), 502
+        raise InstagramError(502, f"Request to Graph API failed: {e}")
 
     body = r.json()
     if r.status_code != 200:
-        return jsonify(error=body.get("error", body)), r.status_code
+        raise InstagramError(r.status_code, body.get("error", body))
 
     bd = body.get("business_discovery", {})
     media_obj = bd.get("media", {})
-    return jsonify(
-        username=bd.get("username"),
-        name=bd.get("name"),
-        posts=[clean_post(m) for m in media_obj.get("data", [])],
-        next_cursor=media_obj.get("paging", {}).get("cursors", {}).get("after"),
-    )
-
-
-if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    return {
+        "username": bd.get("username"),
+        "name": bd.get("name"),
+        "posts": [clean_post(m) for m in media_obj.get("data", [])],
+        "next_cursor": media_obj.get("paging", {}).get("cursors", {}).get("after"),
+    }
