@@ -32,11 +32,12 @@ class PostParser:
         self.KIMI_SYSTEM = """You are tasked with getting information from web posts. Each post
             contains information about a deal or an offer that a business or organization
             is giving. Your task is to extract relevant information and output it as a JSON
-            object matching the schema. Do not guess, if information is missing or unclear,
-            leave fields as null. If the date is not explicit, you may calculate it using 
+            object matching the schema. You may guess, if information is missing or unclear,
+            try to fill out at least the fields title, date, start_time and end_time with relevant information. 
+            If information is genuienly missing and cannot be infered, leave the values as null. If the date is not explicit, you may calculate it using 
             the date of the post or leave it as null. Provide a title and a short description.
             list any conditions(eg. student-id, 30 first clients). Make sure to mark every object
-            as a deal.
+            as a deal. Make sure to always use military time (23:21 instead of 11:21 PM for example).
             
             SCHEMA:
             {
@@ -95,11 +96,13 @@ class PostParser:
         resp.raise_for_status()
 
         # Convert image.
+        print("starting image conversion")
         buffer = np.frombuffer(resp.content, dtype=np.uint8)
         image = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
 
         # Convert image to PaddleOCR's expected format.
         success, encoded_image = cv2.imencode(".jpg", image)
+        print("finishing image conversion")
 
         if not success:
             raise ValueError("Could not encode image to .jpg")
@@ -107,7 +110,10 @@ class PostParser:
  
 
         # Post job up to max_attempts times.
+        i = 0
         for attempts in range(max_attempts):
+            i += 1
+            print(f"attempt n {i} to parse image")
             files = {
                 "file": (
                     "image.jpg",

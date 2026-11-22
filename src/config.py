@@ -10,15 +10,16 @@ from pathlib import Path
 # Instagram accounts to check for events, without the @.
 # They must be business or creator accounts (a Graph API limitation).
 WATCHLIST = [
-    "mcgillmagicclub",
-    "isamcgillu",
+#    "mcgillmagicclub",
+#    "isamcgillu",
+     "wherethefoodat.tracker"
 ]
 
 # How often the loop checks every account, in seconds.
 DISCOVERY_INTERVAL = 6 * 60 * 60  # every 6 hours
 
 # How many of an account's most recent posts to look at on each check.
-POSTS_PER_ACCOUNT = 10
+POSTS_PER_ACCOUNT = 1
 
 # Seconds to wait between two accounts, to be gentle with the Graph API's rate limits.
 PAUSE_BETWEEN_ACCOUNTS = 5

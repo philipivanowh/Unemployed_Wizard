@@ -79,6 +79,7 @@ def parse_post(post):
 
 
 def extract_json(text):
+    print(text)
     """The answer may be wrapped in ```json fences or chatter, and the parser's own
     'not a deal' answer ends in a trailing comma (invalid JSON), so repair that too."""
     match = re.search(r"\{.*\}", text or "", re.DOTALL)
@@ -215,9 +216,11 @@ def ingest_posts(posts, username, stop_on_retry=False):
             event = to_event(extract_json(parse_post(post)), post, username)
             created.append({**info, "event": post_event(event)})
         except TransientError as e:
+            print("e")
             retry.append({**info, "reason": str(e)})
             if stop_on_retry:
                 break
         except Exception as e:  # one bad post shouldn't stop the others
+            print(e)
             skipped.append({**info, "reason": str(e)})
     return {"created": created, "skipped": skipped, "retry": retry, "already_uploaded": len(posts) - len(todo)}
