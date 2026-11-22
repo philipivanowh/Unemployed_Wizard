@@ -15,7 +15,6 @@ WATCHLIST = [
    "isamcgillu",
      "wherethefoodat.tracker",
      "mcgillcsus",
-     "mcgillfoodcoalition",  # McGill Food Coalition (only 1 post as of 2026-11; check it's their main account)
 ]
 
 # How often the loop checks every account, in seconds.
