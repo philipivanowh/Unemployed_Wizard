@@ -1,8 +1,5 @@
 # Unemployed_Wizard
 
-Backend for a free food / free stuff events app. TypeScript + Express 5, SQLite
-(Node's built-in `node:sqlite`, so there are no native modules to compile), and images stored on local disk.
-
 ## Setup
 
 Requires **Node.js 23.6+**. Node runs the backend TypeScript directly, so the server has no build step.

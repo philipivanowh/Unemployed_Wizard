@@ -55,7 +55,7 @@ eventMap.setView(MCGILL, homeZoom, { animate: false });
 // OpenStreetMap's tile servers require this attribution and are meant for light use.
 // maxZoom 20 is one step past the street map's last zoom, where the pixel-art layer is drawn 2x.
 // (It's set here, not on the map, because a map maxZoom upsets the opening fitBounds above.)
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+const streetMap = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   // Only the tiles that cover the area are fetched; nothing outside it is drawn.
   bounds: areaBounds,
   maxNativeZoom: 19,
@@ -66,7 +66,15 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 // Pixel-art terrain and buildings inside the area outline (pixel-world.ts). Until it has
 // loaded, or if the map data can't be fetched, the street map shows there instead.
 const pixelWorld = new PixelWorld(eventMap, { bearing: MAP_ROTATION, rings: areaRings, isInArea: isInDowntown });
-pixelWorld.start(areaBounds.pad(0.01)).catch((err) => console.warn("Couldn't draw the pixel-art map; showing the street map.", err));
+pixelWorld
+  .start(areaBounds.pad(0.01))
+  .then(() => {
+    // The pixel art now covers every part of the map you can reach, so the street map's tiles
+    // are no longer fetched. Its data (OpenStreetMap) still gets credited.
+    eventMap.attributionControl.addAttribution('&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors');
+    streetMap.remove();
+  })
+  .catch((err) => console.warn("Couldn't draw the pixel-art map; showing the street map.", err));
 
 // "Back to McGill" button, under the zoom buttons.
 const HomeControl = L.Control.extend({
@@ -339,9 +347,9 @@ function updateLive(): void {
 // keeps them on the map while panning and zooming, and stacks nearer people in front.
 
 /** How many residents walk around (crowds and the guide come on top). */
-const NPC_COUNT = 14;
+const NPC_COUNT = 18;
 /** How many of them keep night hours (out from the evening until dawn; routine.ts). */
-const NIGHT_WALKER_COUNT = 4;
+const NIGHT_WALKER_COUNT = 6;
 const NPC_MAP_ZOOM = 16;
 
 // Own pane: above the live rings (590) but below the event pins (600), so people never

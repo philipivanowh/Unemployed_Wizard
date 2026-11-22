@@ -43,7 +43,7 @@
    "facade_share": 0.7,
    "roof_base": "#313638ff",
    "speck": "#3e3546ff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#374e4aff",
     "#ab947aff",
@@ -175,7 +175,7 @@
    "facade_share": 0.7,
    "roof_base": "#313638ff",
    "speck": "#2e222fff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#625565ff",
     "#ab947aff",
@@ -241,7 +241,7 @@
    "facade_share": 0.7,
    "roof_base": "#313638ff",
    "speck": "#2e222fff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#625565ff",
     "#ab947aff",
@@ -307,7 +307,7 @@
    "facade_share": 0.7,
    "roof_base": "#313638ff",
    "speck": "#ab947aff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#625565ff",
     "#9babb2ff",
@@ -376,7 +376,7 @@
    "facade_share": 0.65,
    "roof_base": "#2e222fff",
    "speck": "#9babb2ff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#00000000",
     "#00000000",
@@ -476,7 +476,7 @@
    "facade_share": 0.65,
    "roof_base": "#3e3546ff",
    "speck": "#2e222fff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#00000000",
     "#9e4539ff",
@@ -573,7 +573,7 @@
    "facade_share": 0.65,
    "roof_base": "#625565ff",
    "speck": "#3e3546ff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#00000000",
     "#b33831ff",
@@ -669,7 +669,7 @@
    "facade_share": 0.65,
    "roof_base": "#625565ff",
    "speck": "#3e3546ff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#9babb2ff",
     "#b33831ff",
@@ -767,7 +767,7 @@
    "facade_share": 0.4,
    "roof_base": "#7f708aff",
    "speck": "#625565ff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#9babb2ff",
     "#9babb2ff",
@@ -888,7 +888,7 @@
    "facade_share": 0.4,
    "roof_base": "#7f708aff",
    "speck": "#9babb2ff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#9babb2ff",
     "#9babb2ff",
@@ -1009,7 +1009,7 @@
    "facade_share": 0.5,
    "roof_base": "#323353ff",
    "speck": "#2e222fff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#323353ff",
     "#323353ff",
@@ -1166,7 +1166,7 @@
    "facade_share": 0.5,
    "roof_base": "#484a77ff",
    "speck": "#0b5e65ff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#323353ff",
     "#0b5e65ff",
@@ -1319,7 +1319,7 @@
    "facade_share": 0.5,
    "roof_base": "#374e4aff",
    "speck": "#323353ff",
-   "speck_density": 0.012,
+   "speck_density": 0.006,
    "clean_row": [
     "#00000000",
     "#323353ff",
