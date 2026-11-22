@@ -20,11 +20,14 @@ import argparse
 import json
 import logging
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import config
 import watchlist
-from ingest import TransientError, get_parser, ingest_posts
+from ingest import (TransientError, check_edit_access, get_parser, is_recent, post_age_days,
+                    process_post, shortcode_of, uploaded_shortcodes)
 from instagram_scrapper.scrapper import InstagramError, fetch_posts
 
 log = logging.getLogger("discovery")
@@ -43,69 +46,89 @@ def save_seen(seen):
     config.SEEN_FILE.write_text(json.dumps(sorted(seen)))
 
 
-def discover_account(username, seen):
-    """Check one account. Returns how many events were created."""
-    try:
-        result = fetch_posts(username, limit=config.POSTS_PER_ACCOUNT)
-    except InstagramError as e:
-        # Most likely cause: the access token expired or was revoked.
-        log.error("Instagram refused %s (HTTP %s): %s", username, e.status, e.payload)
-        return 0
-    account = result["username"] or username.strip().lstrip("@").lower()  # one spelling, used for the backend
-
-    candidates = [p for p in result["posts"] if p["id"] not in seen]
-    if not candidates:
-        log.info("%s: nothing new", account)
-        return 0
-
-    # The backend drops the posts it already has events for; the parser handles the rest.
-    # stop_on_retry: after one temporary failure (parser busy, backend down) don't pile more
-    # slow, paid attempts on top; the remaining posts wait for the next pass.
-    try:
-        outcome = ingest_posts(candidates, account, stop_on_retry=True)
-    except TransientError as e:  # backend down or editing off: nothing was spent
-        log.warning("%s: can't ingest right now: %s", account, e)
-        return 0
-
-    # Remember posts that can never become events. Posts in `retry` are NOT remembered, so the
-    # next pass tries them again, and the ones that became events are now on the backend's list.
-    for item in outcome["skipped"]:
-        seen.add(item["post_id"])
-    save_seen(seen)
-
-    log.info(
-        "%s: %d created, %d skipped, %d to retry, %d already uploaded",
-        account, len(outcome["created"]), len(outcome["skipped"]), len(outcome["retry"]), outcome["already_uploaded"],
-    )
-    attempted = sum(len(outcome[k]) for k in ("created", "skipped", "retry")) + outcome["already_uploaded"]
-    if attempted < len(candidates):
-        log.warning("%s: stopped early after a temporary failure; %d post(s) wait for the next pass",
-                    account, len(candidates) - attempted)
-    for item in outcome["skipped"] + outcome["retry"]:
-        log.debug("  %s: %s", item["permalink"], item["reason"])
-    return len(outcome["created"])
-
-
-def discover_once():
-    seen = load_seen()
-    total = 0
-    accounts = watchlist.active_usernames()  # reread every pass: build_watchlist.py may have added some
-    log.info("discovery pass started (%d accounts)", len(accounts))
+def collect_posts(accounts, seen):
+    """Scrape every account and return [(account, post)] still worth parsing: recent, not judged
+    before, and not already an event. Raises InstagramError if Instagram refuses us outright
+    (bad or blocked token, rate limit) and TransientError if the backend can't be asked."""
+    jobs = []
     for i, username in enumerate(accounts):
         if i:
             time.sleep(config.PAUSE_BETWEEN_ACCOUNTS)
         try:
-            total += discover_account(username, seen)
-        except Exception:  # never let one account kill the loop
-            log.exception("unexpected error while checking %s", username)
-    return total
+            result = fetch_posts(username, limit=config.POSTS_PER_ACCOUNT)
+        except InstagramError as e:
+            if e.fatal:
+                raise
+            log.warning("%s: can't be read (HTTP %s): %s", username, e.status, e.message)
+            continue
+        account = result["username"] or username.strip().lstrip("@").lower()  # one spelling, used for the backend
+        posts = result["posts"]
+        fresh = [p for p in posts if p["id"] not in seen and is_recent(p)]
+        if fresh:  # only ask the backend when there's something to filter
+            done = uploaded_shortcodes(account)
+            fresh = [p for p in fresh if shortcode_of(p["permalink"]) not in done]
+        log.info("%s: %d post(s) fetched, %d new and recent", account, len(posts), len(fresh))
+        jobs += [(account, p) for p in fresh]
+    # Newest first: the likeliest to be about events that haven't happened yet.
+    return sorted(jobs, key=lambda job: post_age_days(job[1]))
+
+
+def discover_once():
+    """One pass over the watchlist. Returns how many events were created."""
+    seen = load_seen()
+    accounts = watchlist.active_usernames()  # reread every pass: build_watchlist.py may have added some
+    log.info("discovery pass started (%d accounts)", len(accounts))
+    started = time.time()
+    try:
+        check_edit_access()  # before any paid call: would the backend accept the events?
+        jobs = collect_posts(accounts, seen)
+    except InstagramError as e:
+        log.error("Instagram refused every request (HTTP %s, code %s): %s. Skipping this pass; if it's the "
+                  "token, set a new one in IG_ACCESS_TOKEN.", e.status, e.code, e.message.rstrip("."))
+        return 0
+    except TransientError as e:  # backend down or editing off: nothing was spent
+        log.warning("can't ingest right now: %s", e)
+        return 0
+    log.info("scraped in %.0fs; parsing %d post(s), %d at a time", time.time() - started, len(jobs), config.PARSER_WORKERS)
+
+    # After one temporary failure (OCR service busy, backend down) don't start more slow, paid
+    # attempts; the posts not started yet wait for the next pass.
+    stop = threading.Event()
+
+    def work(job):
+        if stop.is_set():
+            return "deferred", {}
+        outcome, info = process_post(job[1], job[0])
+        if outcome == "retry":
+            stop.set()
+        return outcome, info
+
+    counts = {"created": 0, "skipped": 0, "retry": 0, "deferred": 0}
+    with ThreadPoolExecutor(max_workers=config.PARSER_WORKERS) as pool:
+        futures = {pool.submit(work, job): job for job in jobs}
+        for future in as_completed(futures):
+            account, post = futures[future]
+            outcome, info = future.result()
+            counts[outcome] += 1
+            if outcome == "created":
+                log.info("%s: created event %s from %s", account, info["event"].get("id"), post["permalink"])
+            elif outcome == "skipped":
+                # Can never become an event: remember it so it's never paid for again.
+                seen.add(info["post_id"])
+                save_seen(seen)
+                log.info("%s: skipped %s: %s", account, post["permalink"], info["reason"])
+            elif outcome == "retry":
+                log.warning("%s: will retry %s: %s", account, post["permalink"], info["reason"])
+
+    log.info("discovery pass done in %.0fs: %d created, %d skipped, %d to retry, %d left for the next pass",
+             time.time() - started, counts["created"], counts["skipped"], counts["retry"], counts["deferred"])
+    return counts["created"]
 
 
 def run_forever():
     while True:
         started = time.time()
-        created = discover_once()
-        log.info("discovery pass done: %d new events", created)
+        discover_once()
         time.sleep(max(0, config.DISCOVERY_INTERVAL - (time.time() - started)))
 
 

@@ -43,7 +43,7 @@ class PostParser:
             is giving. Your task is to extract relevant information and output it as a JSON
             object matching the schema. You may guess, if information is missing or unclear,
             try to fill out at least the fields title, date, start_time and end_time with relevant 
-            information. If information is genuienly missing and cannot be infered, leave the values 
+            information. If information is cannot be infered, leave the values 
             as null. If the date is not explicit, you may calculate it using the date of the post or 
             leave it as null. Provide a title and a short description. Please list any conditions that 
             apply to the deals(eg. student-id, 30 first clients). Make sure to mark every object as a 
@@ -100,7 +100,7 @@ class PostParser:
         url: str,
         max_attempts: int = 5,
         timeout: float = 120,
-        polling_time: float = 5,
+        polling_time: float = 2,
     ) -> str:
         """Gets the text on an image from its URL using PaddleOCR."""
         # Check if url is empty:
@@ -114,21 +114,24 @@ class PostParser:
         resp = self.requests_session.get(url=url, timeout=15)
         resp.raise_for_status()
 
-        # Convert image.
-        buffer = np.frombuffer(resp.content, dtype=np.uint8)
-        image = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
-
-        # Convert image to PaddleOCR's expected format.
-        success, encoded_image = cv2.imencode(".jpg", image)
-
-        if not success:
-            raise ValueError("Could not encode image to .jpg")
+        # PaddleOCR wants a JPEG. Instagram's images usually are one already; convert the rest.
+        if resp.content[:3] == b"\xff\xd8\xff":
+            jpeg_bytes = resp.content
+        else:
+            buffer = np.frombuffer(resp.content, dtype=np.uint8)
+            image = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
+            if image is None:
+                raise ValueError("Could not decode the post's image")
+            success, encoded_image = cv2.imencode(".jpg", image)
+            if not success:
+                raise ValueError("Could not encode image to .jpg")
+            jpeg_bytes = encoded_image.tobytes()
 
         # Post job up to max_attempts times.
         print("Posting PaddleOCR job")
         for attempts in range(max_attempts):
             files = {
-                "file": ("image.jpg", io.BytesIO(encoded_image.tobytes()), "image/jpeg")
+                "file": ("image.jpg", io.BytesIO(jpeg_bytes), "image/jpeg")
             }
             job_response = self.requests_session.post(
                 self.PADDLE_JOB_URL,
@@ -217,7 +220,7 @@ class PostParser:
         print("Kimi AI is parsing the contents of the post.")
         parsed = self.MoonshotClient.chat.completions.create(
             model=self.KIMI_MODEL,
-            reasoning_effort=self.KMIMI_REASONING_EFFORT,
+            reasoning_effort=self.KIMI_REASONING_EFFORT,
             messages=[
                 {"role": "system", "content": self.KIMI_SYSTEM},
                 {"role": "user", "content": content},

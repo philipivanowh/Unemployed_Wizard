@@ -14,17 +14,29 @@ WATCHLIST = [
    "mcgillmagicclub",
    "isamcgillu",
      "wherethefoodat.tracker",
-     "mcgillcsus"
+     "mcgillcsus",
+     "mcgillfoodcoalition",  # McGill Food Coalition (only 1 post as of 2026-11; check it's their main account)
 ]
 
 # How often the loop checks every account, in seconds.
 DISCOVERY_INTERVAL = 6 * 60 * 60  # every 6 hours
 
-# How many of an account's most recent posts to look at on each check.
-POSTS_PER_ACCOUNT = 1
+# How many of an account's most recent posts to look at on each check. Fetching more is free
+# (still one API call); only new, recent posts are parsed.
+POSTS_PER_ACCOUNT = 10
+
+# Posts older than this are about events that are over, so they're never parsed.
+MAX_POST_AGE_DAYS = 21
+
+# How many posts are parsed at the same time (OCR and LLM calls mostly wait on the network).
+PARSER_WORKERS = 4
+
+# How hard the extraction LLM thinks. Pulling a date and a place out of a post is easy, and
+# "high" made every post take much longer.
+KIMI_REASONING_EFFORT = "low"
 
 # Seconds to wait between two accounts, to be gentle with the Graph API's rate limits.
-PAUSE_BETWEEN_ACCOUNTS = 5
+PAUSE_BETWEEN_ACCOUNTS = 1
 
 # Where the loop remembers posts it judged NOT to be events (no deal, no date, ...), so it
 # doesn't pay to OCR and parse them again. Posts that became events don't need remembering:

@@ -59,8 +59,6 @@ LINK_RE = re.compile(rf"instagram\.com/({USERNAME})(?!\w)", re.I)
 NOT_ACCOUNTS = {"p", "reel", "reels", "tv", "explore", "accounts", "stories", "about", "developer",
                 "legal", "direct", "web", "static", "privacy", "terms", "sharer", "share", "embed"}
 
-# Graph API errors that end the run: bad or expired token (190), rate limits (4, 17, 32, 613, 80002).
-FATAL_CODES = {190, 4, 17, 32, 613, 80002}
 
 
 def _words(words):
@@ -106,14 +104,8 @@ class StopRun(Exception):
     """Out of API calls, or an error that would hit every call (token, rate limit)."""
 
 
-def is_fatal(error):
-    payload = error.payload if isinstance(error.payload, dict) else {}
-    return payload.get("code") in FATAL_CODES
-
-
 def short_error(error):
-    payload = error.payload if isinstance(error.payload, dict) else {}
-    return (payload.get("error_user_msg") or payload.get("message") or str(error.payload))[:200]
+    return error.message[:200]
 
 
 class Builder:
@@ -142,10 +134,8 @@ class Builder:
         try:
             return fn(*args, **kwargs)
         except InstagramError as e:
-            if is_fatal(e):
+            if e.fatal:  # token, rate limit or connection: not this account's fault
                 raise StopRun(f"Instagram stopped us (HTTP {e.status}): {short_error(e)}")
-            if e.status == 502:  # our connection, not the account: don't mark anything unavailable
-                raise StopRun(f"can't reach the Graph API: {e.payload}")
             raise
 
     # --- candidates ----------------------------------------------------------

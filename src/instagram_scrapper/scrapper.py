@@ -8,7 +8,7 @@ import requests
 
 # --- Credentials (set here, or via environment variables) -------------------
 IG_USER_ID = os.getenv("IG_USER_ID", "17841466659616214")  # YOUR IG business account ID
-ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "EAAZAuHT9klgMBTIRGaqoAX50MA6rH65xZBXtOTRp0qTvrd1F724C9tqsx4pOBIXBhXtCnVA2fepGfgZBYp1MVWZCUoZCYgIEqaYhm53KiZAi7RT4Nt1r5dgM7H3oPfXTWocRufPgInJcMj6aUQBGRkEy87oEBl0vPylJnnQGDRGVBUVNlLqdZCujqHAYZAZBGz4vIMQGKrNkwgVdkp1lk3LPGTkcH1ORSwZCuxSTaQtjm4")
+ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "")  # never commit a token: Meta blocks leaked ones
 GRAPH_VERSION = "v27.0"
 # -----------------------------------------------------------------------------
 
@@ -21,10 +21,28 @@ MEDIA_FIELDS = (
 class InstagramError(Exception):
     """The Graph API call failed. `status` is the HTTP status to report, `payload` the error body."""
 
+    # Errors that every call would hit: bad, expired or blocked token (190, 200 "API access
+    # blocked"), and rate limits (4, 17, 32, 613, 80002). Retrying other accounts is pointless.
+    FATAL_CODES = {190, 200, 4, 17, 32, 613, 80002}
+
     def __init__(self, status, payload):
         super().__init__(str(payload))
         self.status = status
         self.payload = payload
+
+    @property
+    def code(self):
+        return self.payload.get("code") if isinstance(self.payload, dict) else None
+
+    @property
+    def fatal(self):
+        return self.code in self.FATAL_CODES or self.status == 502  # 502: we couldn't reach Instagram
+
+    @property
+    def message(self):
+        if isinstance(self.payload, dict):
+            return self.payload.get("error_user_msg") or self.payload.get("message") or str(self.payload)
+        return str(self.payload)
 
 
 def clean_post(m):
@@ -45,6 +63,8 @@ def clean_post(m):
 
 def graph_get(path, params):
     """GET a Graph API path with our access token. Raises InstagramError on failure."""
+    if not ACCESS_TOKEN:
+        raise InstagramError(401, {"code": 190, "message": "Set the IG_ACCESS_TOKEN environment variable"})
     url = f"https://graph.facebook.com/{GRAPH_VERSION}/{path}"
     try:
         r = requests.get(url, params={**params, "access_token": ACCESS_TOKEN}, timeout=20)

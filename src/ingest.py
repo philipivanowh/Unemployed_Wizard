@@ -6,13 +6,18 @@
 Used by discovery.py (the loop) and testing.py (manual checks). Settings are in config.py.
 """
 import json
+import logging
 import os
 import re
+import threading
+from datetime import date, datetime, timezone
 from urllib.parse import quote
 
 import requests
 
 import config
+
+log = logging.getLogger("ingest")
 
 
 class TransientError(Exception):
@@ -22,21 +27,34 @@ class TransientError(Exception):
 
 # --- the parser --------------------------------------------------------------
 
-_parser = None
+_local = threading.local()  # one parser per thread: discovery.py parses several posts at once
 
 
 def get_parser():
     """Built on first use. Raises RuntimeError, naming what's missing, if API keys aren't set."""
-    global _parser
-    if _parser is None:
+    if getattr(_local, "parser", None) is None:
         missing = [key for key in config.REQUIRED_API_KEYS if not os.environ.get(key)]
         if missing:
             raise RuntimeError("Set these environment variables to use the parser: " + ", ".join(missing))
         # Imported here so that scraping alone works without the parser's heavy dependencies.
         from post_parser.post_parser import PostParser
 
-        _parser = PostParser()
-    return _parser
+        _local.parser = PostParser(kimi_reasoning_effort=config.KIMI_REASONING_EFFORT)
+    return _local.parser
+
+
+def post_age_days(post):
+    """How long ago the post was published, in days (Instagram's "2026-11-20T18:00:00+0000")."""
+    try:
+        when = datetime.strptime(post.get("timestamp") or "", "%Y-%m-%dT%H:%M:%S%z")
+    except ValueError:
+        return 0.0  # unknown: treat as new rather than silently dropping it
+    return (datetime.now(timezone.utc) - when).total_seconds() / 86400
+
+
+def is_recent(post):
+    """Older posts are about events that are over; not worth paying to parse."""
+    return post_age_days(post) <= config.MAX_POST_AGE_DAYS
 
 
 def image_url_for(post):
@@ -79,7 +97,6 @@ def parse_post(post):
 
 
 def extract_json(text):
-    print(text)
     """The answer may be wrapped in ```json fences or chatter, and the parser's own
     'not a deal' answer ends in a trailing comma (invalid JSON), so repair that too."""
     match = re.search(r"\{.*\}", text or "", re.DOTALL)
@@ -97,6 +114,35 @@ def is_deal(parsed):
     return str(parsed.get("is_deal")).strip().lower() == "true"
 
 
+def normalize_date(value):
+    """'2026-11-5' or '2026/11/05' -> '2026-11-05'. None if it isn't a real date."""
+    match = re.fullmatch(r"\s*(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\s*", str(value or ""))
+    if not match:
+        return None
+    try:
+        return date(*map(int, match.groups())).isoformat()
+    except ValueError:
+        return None
+
+
+def normalize_time(value):
+    """The backend wants 24-hour HH:MM. Accepts '9:00', '18:00:00', '6 PM', '6:30pm', '18h30', '24:00'."""
+    match = re.fullmatch(r"\s*(\d{1,2})(?:[:h.](\d{2})?)?(?::\d{2})?\s*(?:([ap])\.?\s*m?\.?)?\s*",
+                         str(value or ""), re.I)
+    if not match:
+        return None
+    hour, minute, half = int(match[1]), int(match[2] or 0), (match[3] or "").lower()
+    if half == "p" and hour < 12:
+        hour += 12
+    elif half == "a" and hour == 12:
+        hour = 0
+    if (hour, minute) == (24, 0):
+        hour, minute = 23, 59
+    if hour > 23 or minute > 59:
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
 def to_event(parsed, post, username):
     """Map the parser's answer onto the TypeScript API's schema (see src/events/validation.ts),
     tagging it with the Instagram post it came from. Raises ValueError if it can't be an event."""
@@ -105,10 +151,14 @@ def to_event(parsed, post, username):
 
     # `location` (e.g. "Trottier") is the fallback when there's no street address.
     address = ", ".join(x for x in (parsed.get("address_line_1"), parsed.get("address_line_2")) if x) or parsed.get("location")
-    fields = {"title": parsed.get("title"), "date": parsed.get("date"), "start_time": parsed.get("start_time"), "address": address}
+    day, start = normalize_date(parsed.get("date")), normalize_time(parsed.get("start_time"))
+    fields = {"title": parsed.get("title"), "date": day, "start_time": start, "address": address}
     missing = [name for name, value in fields.items() if not value]
     if missing:
-        raise ValueError(f"parser left out required fields: {', '.join(missing)}")
+        raw = {k: parsed.get(k) for k in ("date", "start_time")}
+        raise ValueError(f"parser left out or garbled required fields: {', '.join(missing)} (got {raw})")
+    if day < date.today().isoformat():
+        raise ValueError(f"event already happened ({day})")
 
     description = parsed.get("description") or ""
     if parsed.get("conditions"):
@@ -116,9 +166,9 @@ def to_event(parsed, post, username):
 
     return {
         "title": parsed["title"][:120],
-        "date": parsed["date"],  # must be YYYY-MM-DD
-        "startTime": parsed["start_time"],  # must be 24h HH:MM
-        "endTime": parsed.get("end_time"),
+        "date": day,  # YYYY-MM-DD
+        "startTime": start,  # 24h HH:MM
+        "endTime": normalize_time(parsed.get("end_time")),
         "address": address[:300],
         # The parser has no list of items and the API needs at least one.
         "freeItems": [parsed["title"][:100]],
@@ -185,6 +235,27 @@ def post_event(event):
 # --- the pipeline ------------------------------------------------------------
 
 
+def process_post(post, username):
+    """Parse one post and create its event. Thread-safe.
+
+    Returns (outcome, info): outcome is "created" (info has "event"), "skipped" (can never become
+    an event) or "retry" (temporary failure); info always has "post_id", "permalink" and, unless
+    created, "reason".
+    """
+    info = {"post_id": post["id"], "permalink": post["permalink"]}
+    try:
+        if not post["caption"] and not image_url_for(post):
+            raise ValueError("post has neither a caption nor an image")
+        answer = parse_post(post)
+        log.debug("parser answer for %s: %s", post["permalink"], answer)
+        event = to_event(extract_json(answer), post, username)
+        return "created", {**info, "event": post_event(event)}
+    except TransientError as e:
+        return "retry", {**info, "reason": str(e)}
+    except Exception as e:  # one bad post shouldn't stop the others
+        return "skipped", {**info, "reason": str(e) if isinstance(e, ValueError) else f"{type(e).__name__}: {e}"}
+
+
 def ingest_posts(posts, username, stop_on_retry=False):
     """Run an account's scraped posts (as returned by fetch_posts) through the pipeline,
     in the order given.
@@ -207,20 +278,11 @@ def ingest_posts(posts, username, stop_on_retry=False):
     done = uploaded_shortcodes(username)
     todo = [p for p in posts if shortcode_of(p["permalink"]) not in done]
 
-    created, skipped, retry = [], [], []
+    results = {"created": [], "skipped": [], "retry": []}
     for post in todo:
-        info = {"post_id": post["id"], "permalink": post["permalink"]}
-        try:
-            if not post["caption"] and not image_url_for(post):
-                raise ValueError("post has neither a caption nor an image")
-            event = to_event(extract_json(parse_post(post)), post, username)
-            created.append({**info, "event": post_event(event)})
-        except TransientError as e:
-            print("e")
-            retry.append({**info, "reason": str(e)})
-            if stop_on_retry:
-                break
-        except Exception as e:  # one bad post shouldn't stop the others
-            print(e)
-            skipped.append({**info, "reason": str(e)})
+        outcome, info = process_post(post, username)
+        results[outcome].append(info)
+        if outcome == "retry" and stop_on_retry:
+            break
+    created, skipped, retry = results["created"], results["skipped"], results["retry"]
     return {"created": created, "skipped": skipped, "retry": retry, "already_uploaded": len(posts) - len(todo)}
