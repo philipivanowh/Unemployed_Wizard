@@ -35,18 +35,166 @@
         margin: 0;
         font-size: 18px;
       }
-      #map-status {
+      .status-wrap {
         flex: 1;
+      }
+      /* "N upcoming events": opens the event list. */
+      #map-status {
+        padding: 0;
+        border: 0;
+        background: none;
+        font: inherit;
         font-size: 14px;
+        color: #2563eb;
+        text-align: left;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        cursor: pointer;
+      }
+      #map-status:hover {
+        color: #1d4ed8;
+      }
+      #map-status:disabled {
         color: #4b5563;
+        text-decoration: none;
+        cursor: default;
+      }
+      #map-status[aria-expanded="true"] {
+        font-weight: 600;
       }
       header a {
         font-size: 14px;
         color: #2563eb;
       }
+      #map-area {
+        flex: 1;
+        display: flex;
+        min-height: 300px;
+      }
       #map {
         flex: 1;
-        min-height: 300px;
+        min-width: 0;
+      }
+
+      /* ---- Event list (beside the map; over it on phones) ---- */
+      #event-list *,
+      .place-event {
+        box-sizing: border-box;
+      }
+      #event-list {
+        display: flex;
+        flex-direction: column;
+        width: 340px;
+        background: #ffffff;
+        border-left: 1px solid #d1d5db;
+      }
+      .list-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      .list-head h2 {
+        margin: 0;
+        font-size: 16px;
+      }
+      .list-head h2:focus {
+        outline: none;
+      }
+      #event-list-close {
+        padding: 4px 10px;
+        border: 1px solid #d1d5db;
+        background: #ffffff;
+        color: #1f2937;
+        font: 600 13px system-ui, -apple-system, "Segoe UI", sans-serif;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      #event-list-close:hover {
+        background: #f3f4f6;
+      }
+      #event-list-items {
+        flex: 1;
+        overflow-y: auto;
+        margin: 0;
+        padding: 0 0 16px;
+        list-style: none;
+      }
+      .list-day {
+        position: sticky;
+        top: 0;
+        padding: 10px 16px 6px;
+        background: #f9fafb;
+        border-bottom: 1px solid #e5e7eb;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #4b5563;
+      }
+      .list-event {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: 100%;
+        padding: 10px 16px;
+        border: 0;
+        border-bottom: 1px solid #f3f4f6;
+        background: none;
+        font: inherit;
+        font-size: 13px;
+        color: #4b5563;
+        text-align: left;
+      }
+      button.list-event {
+        cursor: pointer;
+      }
+      button.list-event:hover {
+        background: #eff6ff;
+      }
+      button.list-event:focus-visible {
+        outline: 2px solid #2563eb;
+        outline-offset: -2px;
+      }
+      .list-when {
+        font-weight: 600;
+        color: #1f2937;
+      }
+      .list-live {
+        margin-right: 6px;
+        padding: 0 5px;
+        background: #16a34a;
+        color: #ffffff;
+        border-radius: 3px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .list-title {
+        font-size: 15px;
+        font-weight: 600;
+        color: #111827;
+      }
+      .list-free {
+        color: #b91c1c;
+        font-weight: 600;
+      }
+      .list-note {
+        color: #6b7280;
+        font-style: italic;
+      }
+      @media (max-width: 640px) {
+        #map-area {
+          position: relative;
+        }
+        #event-list {
+          position: absolute;
+          inset: 0;
+          z-index: 1100;
+          width: auto;
+          border-left: 0;
+        }
       }
       #game-clock {
         font: 600 13px ui-monospace, monospace;
@@ -559,16 +707,76 @@
       .event-popup .muted {
         color: #6b7280;
       }
+      /* Several events at one place (map.ts placePopup). */
+      .place-events {
+        margin: 6px 0 0;
+        padding: 0;
+        list-style: none;
+        max-height: 240px;
+        overflow-y: auto;
+      }
+      .place-event {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        width: 100%;
+        padding: 6px 4px;
+        border: 0;
+        border-top: 1px solid #e5e7eb;
+        background: none;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .place-event:hover {
+        background: #eff6ff;
+      }
+      .place-event-title {
+        font-weight: 600;
+        color: #111827;
+      }
+      .place-event-when {
+        color: #4b5563;
+        font-size: 12px;
+      }
+      .place-event-when.live {
+        color: #15803d;
+        font-weight: 600;
+      }
+      .back-to-place {
+        display: block;
+        margin: 0 0 6px;
+        padding: 0;
+        border: 0;
+        background: none;
+        font: 600 12px system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: #2563eb;
+        cursor: pointer;
+      }
+      .back-to-place:hover {
+        text-decoration: underline;
+      }
     </style>
   </head>
   <body>
     <header>
       <h1>Free events in downtown Montreal</h1>
       <span id="game-clock" title="Game time: townspeople follow their routines by this clock">Mon 8:00 AM</span>
-      <span id="map-status">Loading events…</span>
+      <span class="status-wrap"
+        ><button type="button" id="map-status" aria-expanded="false" aria-controls="event-list" disabled>Loading events…</button></span
+      >
       <a href="/add-event.html" id="add-event-link">Add event</a>
     </header>
-    <div id="map"></div>
+    <div id="map-area">
+      <div id="map"></div>
+      <aside id="event-list" aria-labelledby="event-list-title" hidden>
+        <div class="list-head">
+          <h2 id="event-list-title" tabindex="-1">Upcoming events</h2>
+          <button type="button" id="event-list-close" aria-label="Close the event list">Close</button>
+        </div>
+        <ol id="event-list-items"></ol>
+      </aside>
+    </div>
     <script src="/vendor/leaflet/leaflet.js"></script>
     <script src="/vendor/leaflet-rotate/leaflet-rotate.js"></script>
     <!-- Compiled from src/frontend/*.ts -->

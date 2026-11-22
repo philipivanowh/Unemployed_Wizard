@@ -2,7 +2,8 @@
 // (area-data.ts); "Back to McGill" returns. Townspeople walk the
 // area's real walkways on a daily routine, crowds gather at events in the area while
 // they're on, and "Take me there" draws a walking route. Event popups have Edit and Remove
-// buttons when editing is allowed (see admin.ts).
+// buttons when editing is allowed (see admin.ts). Events at the same place share one pin, which
+// shows how many there are; clicking the "N upcoming events" header opens a list of them all.
 // index.html loads Leaflet (global `L`), leaflet-rotate, npc.ts, walk-graph.ts, routine.ts,
 // crowds.ts, route-guide.ts, area-data.ts, area.ts and admin.ts before this file.
 
@@ -323,21 +324,42 @@ function editControls(event: LocatedEvent): HTMLElement[] {
 const ENDING_SOON_MINUTES = 15;
 type PinState = "upcoming" | "live" | "ending";
 const PIN_COLOURS: Record<PinState, string> = { upcoming: "#2563eb", live: "#16a34a", ending: "#111827" };
-const pinIcons = new Map<PinState, L.DivIcon>();
+const pinIcons = new Map<string, L.DivIcon>();
+const PIN_PATH = "M12.5 0C5.6 0 0 5.6 0 12.5 0 21.9 12.5 41 12.5 41S25 21.9 25 12.5C25 5.6 19.4 0 12.5 0z";
 
-/** A map pin in the state's colour, the same size and anchor as Leaflet's default pin. */
-function pinIcon(state: PinState): L.DivIcon {
-  let icon = pinIcons.get(state);
+/** A map pin in the state's colour, the same size and anchor as Leaflet's default pin. For
+ * several events at one place: a second pin peeks out behind it and the head shows the count. */
+function pinIcon(state: PinState, count = 1): L.DivIcon {
+  const cacheKey = `${state}:${count}`;
+  let icon = pinIcons.get(cacheKey);
   if (!icon) {
     const c = PIN_COLOURS[state];
-    icon = L.divIcon({
-      className: `event-pin event-pin-${state}`,
-      html: `<svg viewBox="0 0 25 41" width="25" height="41" aria-hidden="true"><path d="M12.5 0C5.6 0 0 5.6 0 12.5 0 21.9 12.5 41 12.5 41S25 21.9 25 12.5C25 5.6 19.4 0 12.5 0z" fill="${c}" stroke="rgba(0,0,0,0.35)" stroke-width="1"/><circle cx="12.5" cy="12.5" r="4.6" fill="#ffffff"/></svg>`,
-      iconSize: [25, 41],
-      iconAnchor: [12.5, 41],
-      popupAnchor: [1, -34],
-    });
-    pinIcons.set(state, icon);
+    const pin = `<path d="${PIN_PATH}" fill="${c}" stroke="rgba(0,0,0,0.35)" stroke-width="1"/>`;
+    if (count > 1) {
+      const label = count > 99 ? "99+" : String(count);
+      const size = label.length > 1 ? 9.5 : 12;
+      icon = L.divIcon({
+        className: `event-pin event-pin-${state} event-pin-multi`,
+        html:
+          `<svg viewBox="0 -3 30 44" width="30" height="44" aria-hidden="true">` +
+          `<path d="${PIN_PATH}" transform="translate(5 -3)" fill="${c}" fill-opacity="0.55" stroke="rgba(0,0,0,0.35)" stroke-width="1"/>` +
+          pin +
+          `<circle cx="12.5" cy="12.5" r="8" fill="#ffffff"/>` +
+          `<text x="12.5" y="12.5" dy="0.36em" text-anchor="middle" font-size="${size}" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" fill="${c}">${label}</text></svg>`,
+        iconSize: [30, 44],
+        iconAnchor: [12.5, 44],
+        popupAnchor: [1, -37],
+      });
+    } else {
+      icon = L.divIcon({
+        className: `event-pin event-pin-${state}`,
+        html: `<svg viewBox="0 0 25 41" width="25" height="41" aria-hidden="true">${pin}<circle cx="12.5" cy="12.5" r="4.6" fill="#ffffff"/></svg>`,
+        iconSize: [25, 41],
+        iconAnchor: [12.5, 41],
+        popupAnchor: [1, -34],
+      });
+    }
+    pinIcons.set(cacheKey, icon);
   }
   return icon;
 }
@@ -347,11 +369,94 @@ function pinState(event: LocatedEvent, now: Date): PinState {
   if (phase !== "live") return "upcoming";
   return eventWindow(event).end.getTime() - now.getTime() <= ENDING_SOON_MINUTES * 60_000 ? "ending" : "live";
 }
-const pinStatesById = new Map<string, PinState>();
 
 /** Every upcoming event with a location, by id (all get pins). */
 const eventsById = new Map<string, LocatedEvent>();
-const pinsById = new Map<string, L.Marker>();
+/** Every upcoming event, located or not, soonest first (the event list). */
+let upcomingEvents: MapEvent[] = [];
+
+/** One pin: every event at the same spot (the same geocoded address or McGill building). */
+interface Place {
+  marker: L.Marker;
+  /** Soonest first. */
+  ids: string[];
+  state: PinState | null;
+  count: number;
+}
+const placesByKey = new Map<string, Place>();
+const placeKeyById = new Map<string, string>();
+/** Events less than about a metre apart share a pin. */
+const placeKey = (event: LocatedEvent) => `${event.latitude.toFixed(5)},${event.longitude.toFixed(5)}`;
+const bySoonest = (a: MapEvent, b: MapEvent) => `${a.date} ${a.startTime}`.localeCompare(`${b.date} ${b.startTime}`);
+
+function placeEvents(place: Place): LocatedEvent[] {
+  return place.ids.flatMap((id) => eventsById.get(id) ?? []);
+}
+
+/** A place's pin is green if any of its events is on, black if one is ending, else blue. */
+function placeState(place: Place, now: Date): PinState {
+  const states = placeEvents(place).map((event) => pinState(event, now));
+  return states.includes("live") ? "live" : states.includes("ending") ? "ending" : "upcoming";
+}
+
+function refreshPlaceIcon(place: Place, now: Date): void {
+  const state = placeState(place, now);
+  if (state === place.state && place.count === place.ids.length) return;
+  place.state = state;
+  place.count = place.ids.length;
+  place.marker.setIcon(pinIcon(state, place.count));
+}
+
+/** Switches a place's popup between its list and one event. The click is stopped first: the
+ * button it came from leaves the page, and Leaflet would take it for a click on the map and
+ * close the popup. */
+function swapPopup(e: Event, place: Place, showId?: string): void {
+  e.stopPropagation();
+  place.marker.setPopupContent(placePopup(place, showId));
+}
+
+/** The popup of a place: the event itself, or for several a list to pick one from. */
+function placePopup(place: Place, showId?: string): HTMLElement {
+  const events = placeEvents(place);
+  if (events.length === 1) return eventPopup(events[0]!);
+  const shown = showId ? events.find((event) => event.id === showId) : undefined;
+  if (shown) {
+    const popup = eventPopup(shown);
+    const back = makeElement("button", `← All ${events.length} events here`, "back-to-place");
+    back.type = "button";
+    back.addEventListener("click", (e) => swapPopup(e, place));
+    popup.prepend(back);
+    return popup;
+  }
+
+  const popup = makeElement("div", undefined, "event-popup place-popup");
+  popup.append(makeElement("h3", `${events.length} events here`));
+  popup.append(makeElement("p", events[0]!.address, "muted"));
+  const list = makeElement("ul", undefined, "place-events");
+  for (const event of events) {
+    const item = makeElement("button", undefined, "place-event");
+    item.type = "button";
+    const live = eventPhase(event, gameClock.now) === "live";
+    item.append(makeElement("span", event.title, "place-event-title"));
+    item.append(makeElement("span", (live ? "Now · " : "") + formatWhen(event), live ? "place-event-when live" : "place-event-when"));
+    item.addEventListener("click", (e) => swapPopup(e, place, event.id));
+    const li = makeElement("li");
+    li.append(item);
+    list.append(li);
+  }
+  popup.append(list);
+  return popup;
+}
+
+/** Centres the map on an event and opens it in its pin's popup. */
+function showEventOnMap(id: string): void {
+  const event = eventsById.get(id);
+  const place = placesByKey.get(placeKeyById.get(id) ?? "");
+  if (!event || !place) return;
+  eventMap.setView([event.latitude, event.longitude], Math.max(eventMap.getZoom(), 17));
+  place.marker.setPopupContent(placePopup(place, id));
+  place.marker.openPopup();
+}
 const liveRingsById = new Map<string, L.Marker>();
 /** Events inside the walkway area: townspeople visit these and crowds gather there. */
 let downtownEvents: LocatedEvent[] = [];
@@ -375,33 +480,41 @@ async function refreshEvents(): Promise<void> {
         : [],
     );
     downtownEvents = located.filter((event) => isInDowntown(event.latitude, event.longitude));
+    upcomingEvents = [...data.events].sort(bySoonest);
 
-    // Add new pins, move edited ones, remove deleted ones.
-    const seen = new Set<string>();
-    for (const event of located) {
-      seen.add(event.id);
+    // Group the events by place, then add new pins, update changed ones, remove empty ones.
+    eventsById.clear();
+    placeKeyById.clear();
+    const groups = new Map<string, string[]>();
+    for (const event of [...located].sort(bySoonest)) {
       eventsById.set(event.id, event);
-      const existing = pinsById.get(event.id);
-      if (existing) {
-        existing.setLatLng([event.latitude, event.longitude]);
-        existing.options.title = event.title;
-        existing.getElement()?.setAttribute("title", event.title);
-        continue;
-      }
-      const state = pinState(event, gameClock.now);
-      pinStatesById.set(event.id, state);
-      const marker = L.marker([event.latitude, event.longitude], { title: event.title, icon: pinIcon(state) })
-        // Built when opened, so the live badge is always current.
-        .bindPopup(() => eventPopup(eventsById.get(event.id) ?? event))
-        .addTo(eventMap);
-      pinsById.set(event.id, marker);
+      const key = placeKey(event);
+      placeKeyById.set(event.id, key);
+      groups.set(key, [...(groups.get(key) ?? []), event.id]);
     }
-    for (const [id, marker] of pinsById) {
-      if (seen.has(id)) continue;
-      marker.remove();
-      pinsById.delete(id);
-      pinStatesById.delete(id);
-      eventsById.delete(id);
+    for (const [key, ids] of groups) {
+      let place = placesByKey.get(key);
+      if (!place) {
+        const first = eventsById.get(ids[0]!)!;
+        const marker = L.marker([first.latitude, first.longitude], { icon: pinIcon("upcoming") }).addTo(eventMap);
+        const newPlace: Place = { marker, ids, state: null, count: 0 };
+        // Built when opened, so the live badge is always current. Picking one of several events
+        // swaps the content; closing the popup brings back the list for next time.
+        const content = () => placePopup(newPlace);
+        marker.bindPopup(content).on("popupclose", () => marker.getPopup()?.setContent(content));
+        placesByKey.set(key, newPlace);
+        place = newPlace;
+      }
+      place.ids = ids;
+      const titles = placeEvents(place).map((event) => event.title);
+      const title = titles.length > 1 ? `${titles.length} events: ${titles.join(", ")}` : (titles[0] ?? "");
+      place.marker.options.title = title;
+      place.marker.getElement()?.setAttribute("title", title);
+    }
+    for (const [key, place] of placesByKey) {
+      if (groups.has(key)) continue;
+      place.marker.remove();
+      placesByKey.delete(key);
     }
 
     const missing = data.events.length - located.length;
@@ -411,6 +524,7 @@ async function refreshEvents(): Promise<void> {
         : `${located.length} upcoming event${located.length === 1 ? "" : "s"}` +
           (missing > 0 ? ` · ${missing} without a location` : "");
     updateLive();
+    renderEventList();
   } catch (err) {
     console.error("Failed to load events", err);
     if (status && !eventSummary) status.textContent = "Couldn't load events";
@@ -426,11 +540,6 @@ function updateLive(): void {
     const phase = eventPhase(event, now);
     const live = phase === "live";
     if (live) liveCount++;
-    const state = pinState(event, now);
-    if (pinStatesById.get(event.id) !== state) {
-      pinStatesById.set(event.id, state);
-      pinsById.get(event.id)?.setIcon(pinIcon(state));
-    }
     const ring = liveRingsById.get(event.id);
     if ((live || phase === "soon") && !ring) {
       const icon = L.divIcon({ className: `live-ring${live ? "" : " soon"}`, html: "<span></span>", iconSize: [56, 56], iconAnchor: [28, 28] });
@@ -448,11 +557,92 @@ function updateLive(): void {
       liveRingsById.delete(id);
     }
   }
+  for (const place of placesByKey.values()) refreshPlaceIcon(place, now);
   crowds?.sync(downtownEvents, now, false);
 
   const status = document.getElementById("map-status");
-  if (status) status.textContent = eventSummary + (liveCount > 0 ? ` · ${liveCount} happening now` : "");
+  if (status instanceof HTMLButtonElement) {
+    status.textContent = eventSummary + (liveCount > 0 ? ` · ${liveCount} happening now` : "");
+    status.disabled = upcomingEvents.length === 0 && listPanel?.hidden !== false;
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Event list: opens from the "N upcoming events" button in the header.
+
+const listButton = document.getElementById("map-status") as HTMLButtonElement | null;
+const listPanel = document.getElementById("event-list");
+const listItems = document.getElementById("event-list-items");
+const listTitle = document.getElementById("event-list-title");
+
+function dayHeading(date: string): string {
+  const today = localDateIso(new Date());
+  const tomorrow = localDateIso(new Date(Date.now() + 86_400_000));
+  if (date === today) return "Today";
+  if (date === tomorrow) return "Tomorrow";
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+}
+
+function renderEventList(): void {
+  if (!listItems || !listTitle) return;
+  const count = upcomingEvents.length;
+  listTitle.textContent = count === 0 ? "No upcoming events" : `${count} upcoming event${count === 1 ? "" : "s"}`;
+  const now = gameClock.now;
+  const rows: HTMLElement[] = [];
+  let day = "";
+  for (const event of upcomingEvents) {
+    if (event.date !== day) {
+      day = event.date;
+      rows.push(makeElement("li", dayHeading(day), "list-day"));
+    }
+    const located = eventsById.get(event.id);
+    const sharing = located ? (placesByKey.get(placeKeyById.get(event.id) ?? "")?.ids.length ?? 1) : 0;
+    const item = makeElement(located ? "button" : "div", undefined, "list-event");
+    if (item instanceof HTMLButtonElement) {
+      item.type = "button";
+      item.addEventListener("click", () => {
+        if (window.matchMedia("(max-width: 640px)").matches) closeEventList(false);
+        showEventOnMap(event.id);
+      });
+    }
+    const phase = located ? eventPhase(located, now) : "upcoming";
+    const when = makeElement("span", formatWhen(event).replace(/^[^·]*· /, ""), "list-when");
+    if (phase === "live") when.prepend(makeElement("span", "Now", "list-live"));
+    item.append(when, makeElement("span", event.title, "list-title"));
+    const where = event.roomNumber ? `${event.address}, room ${event.roomNumber}` : event.address;
+    item.append(makeElement("span", where, "list-where"));
+    if (event.freeItems.length > 0) item.append(makeElement("span", `Free: ${event.freeItems.join(", ")}`, "list-free"));
+    if (!located) item.append(makeElement("span", "Not on the map: its address couldn't be found", "list-note"));
+    else if (sharing > 1) item.append(makeElement("span", `${sharing} events at this place`, "list-note"));
+    const li = makeElement("li");
+    li.append(item);
+    rows.push(li);
+  }
+  listItems.replaceChildren(...rows);
+}
+
+function openEventList(): void {
+  if (!listPanel || !listButton) return;
+  renderEventList();
+  listPanel.hidden = false;
+  listButton.setAttribute("aria-expanded", "true");
+  eventMap.invalidateSize();
+  listTitle?.focus();
+}
+
+function closeEventList(returnFocus = true): void {
+  if (!listPanel || !listButton || listPanel.hidden) return;
+  listPanel.hidden = true;
+  listButton.setAttribute("aria-expanded", "false");
+  eventMap.invalidateSize();
+  if (returnFocus) listButton.focus();
+}
+
+listButton?.addEventListener("click", () => (listPanel?.hidden ? openEventList() : closeEventList()));
+document.getElementById("event-list-close")?.addEventListener("click", () => closeEventList());
+listPanel?.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeEventList();
+});
 
 // ---------------------------------------------------------------------------
 // People on the map
@@ -662,11 +852,7 @@ const routeGuide = new RouteGuide({
 const eventsLoaded = refreshEvents().then(() => {
   // /?event=<id> (the Add Event page links here) opens that event's pin.
   const focusId = new URLSearchParams(location.search).get("event");
-  const event = focusId ? eventsById.get(focusId) : undefined;
-  if (event) {
-    eventMap.setView([event.latitude, event.longitude], Math.max(eventMap.getZoom(), 17), { animate: false });
-    pinsById.get(event.id)?.openPopup();
-  }
+  if (focusId && eventsById.has(focusId)) showEventOnMap(focusId);
 });
 void refreshEditAccess();
 setInterval(() => {

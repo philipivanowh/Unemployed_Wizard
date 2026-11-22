@@ -17,8 +17,12 @@ WATCHLIST = [
      "mcgillcsus",
 ]
 
-# How often the loop checks every account, in seconds.
-DISCOVERY_INTERVAL = 6 * 60 * 60  # every 6 hours
+# The loop runs until stopped (Ctrl+C). A new pass starts DISCOVERY_INTERVAL seconds after the
+# last one started, or straight away if that pass took longer.
+DISCOVERY_INTERVAL = 5 * 60
+# After a pass that couldn't scrape anything (backend down, crash, Graph API refusing), try
+# again this soon.
+DISCOVERY_RETRY_SECONDS = 60
 
 # How many of an account's most recent posts to look at on each check. Fetching more is free
 # (still one API call); only new, recent posts are parsed.

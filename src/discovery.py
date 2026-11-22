@@ -196,7 +196,7 @@ def run_forever():
             if paused > wait and why != "spacing between calls":
                 wait = paused + 5
                 log.info("Graph API paused (%s)", why)
-        wait = max(wait, 0)
+        wait = max(10, 0)
         log.info("next pass at %s", _until(wait))
         time.sleep(wait)
 
