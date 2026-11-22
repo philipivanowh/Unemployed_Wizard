@@ -23,7 +23,7 @@ DISCOVERY_INTERVAL = 6 * 60 * 60  # every 6 hours
 
 # How many of an account's most recent posts to look at on each check. Fetching more is free
 # (still one API call); only new, recent posts are parsed.
-POSTS_PER_ACCOUNT = 10
+POSTS_PER_ACCOUNT = 4
 
 # Posts older than this are about events that are over, so they're never parsed.
 MAX_POST_AGE_DAYS = 21
