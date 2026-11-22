@@ -97,6 +97,83 @@ const HomeControl = L.Control.extend({
 new HomeControl({ position: "topleft" }).addTo(eventMap);
 
 // ---------------------------------------------------------------------------
+// Background music (public/music.mp3), looping. Browsers only allow sound after the visitor
+// interacts with the page, so it starts on their first click, tap or key press. The button
+// under "Back to McGill" turns it on and off, and the choice is remembered.
+
+const MUSIC_VOLUME = 0.35;
+const MUSIC_OFF_KEY = "freeEvents.musicOff";
+const music = new Audio("/music.mp3");
+music.loop = true;
+music.preload = "none"; // the file is big: only download it once it's going to play
+music.volume = MUSIC_VOLUME;
+let musicOn = (() => {
+  try {
+    return localStorage.getItem(MUSIC_OFF_KEY) !== "1";
+  } catch {
+    return true;
+  }
+})();
+let musicLink: HTMLAnchorElement | null = null;
+
+function showMusicState(): void {
+  if (!musicLink) return;
+  const playing = musicOn && !music.paused;
+  musicLink.textContent = playing ? "♪ Music on" : "♪ Music off";
+  musicLink.title = playing ? "Turn the music off" : "Turn the music on";
+  musicLink.classList.toggle("off", !playing);
+}
+
+function playMusic(): void {
+  if (!musicOn) return;
+  // play() fails until the visitor has interacted with the page; the next interaction retries.
+  music.play().then(showMusicState, () => undefined);
+}
+
+const MusicControl = L.Control.extend({
+  onAdd(): HTMLElement {
+    const box = L.DomUtil.create("div", "leaflet-bar leaflet-control home-control music-control");
+    musicLink = L.DomUtil.create("a", "", box);
+    musicLink.href = "#";
+    musicLink.setAttribute("role", "button");
+    L.DomEvent.disableClickPropagation(box);
+    L.DomEvent.on(musicLink, "click", (e) => {
+      L.DomEvent.preventDefault(e);
+      musicOn = music.paused;
+      try {
+        if (musicOn) localStorage.removeItem(MUSIC_OFF_KEY);
+        else localStorage.setItem(MUSIC_OFF_KEY, "1");
+      } catch {
+        // storage blocked: the choice lasts until the page is closed
+      }
+      if (musicOn) playMusic();
+      else music.pause();
+      showMusicState();
+    });
+    showMusicState();
+    return box;
+  },
+});
+new MusicControl({ position: "topleft" }).addTo(eventMap);
+music.addEventListener("play", showMusicState);
+music.addEventListener("pause", showMusicState);
+// Start with the first interaction anywhere on the page (the music button handles its own click).
+const startMusic = (e: Event) => {
+  if (e.target instanceof Element && e.target.closest(".music-control")) return;
+  if (music.paused) playMusic();
+};
+window.addEventListener("pointerdown", startMusic, true);
+window.addEventListener("keydown", startMusic, true);
+music.addEventListener(
+  "playing",
+  () => {
+    window.removeEventListener("pointerdown", startMusic, true);
+    window.removeEventListener("keydown", startMusic, true);
+  },
+  { once: true },
+);
+
+// ---------------------------------------------------------------------------
 // Event pins
 
 /** How often to check for new events and update which ones are live. */
