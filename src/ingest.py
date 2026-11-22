@@ -86,6 +86,8 @@ def parse_post(post):
         "timestamp": post["timestamp"],
         "thumbnail_url": image_url_for(post),
         "caption": post["caption"],
+        "media_type": post["media_type"],
+        "children": post["children"],
     }
     try:
         return parser.evaluate_post(post_info)
