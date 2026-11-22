@@ -424,9 +424,9 @@ function updateLive(): void {
 // keeps them on the map while panning and zooming, and stacks nearer people in front.
 
 /** How many residents walk around (crowds and the guide come on top). */
-const NPC_COUNT = 18;
+const NPC_COUNT = 30;
 /** How many of them keep night hours (out from the evening until dawn; routine.ts). */
-const NIGHT_WALKER_COUNT = 6;
+const NIGHT_WALKER_COUNT = 10;
 const NPC_MAP_ZOOM = 16;
 
 // Own pane: above the live rings (590) but below the event pins (600), so people never

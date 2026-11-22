@@ -253,36 +253,41 @@ class PostParser:
             Arguments:
                 post_info: dict
                     A dictionary containing the following fields:
-                        "timestamp", "thumbnail_url", "caption"
+                        "timestamp", "childrend", "caption"
         """
-        # Assemble necessary context.
-        image = self.__parse_image(post_info["thumbnail_url"])
+        # Loop through all the different media in the post.
+        image_text = []
+        for child in post_info["children"]:
+            if child["media_type"] != "VIDEO":
+                # Assemble necessary context.
+                image = self.__parse_image(post_info["media_url"])
+                image_text.append(image)
+        # Gather parsing content. 
         parsing_content = {
             "timestamp": post_info["timestamp"],
-            "image_text": image,
+            "image_text": image_text,
             "caption": post_info["caption"],
         }
 
         content = json.dumps(parsing_content, ensure_ascii=False)
-
         # Use Jev to see if there are any goodies.
         if self.__evaluate_content(str(content)):
-            description = self.__parse_text(str(content))
-        else:
+            return self.__parse_text(str(content))
+        else:            
             description = """
-            {
-            "is_deal": false,
-            "title": null,
-            "description": null,
-            "date": null,
-            "start_time": null,
-            "end_time": null,
-            "offer_type": null,
-            "offer_category": null,
-            "location": null,
-            "address_line_1": null,
-            "address_line_2": null,
-            "conditions": null,
-            }
-            """
-        return description
+                {
+                "is_deal": false,
+                "title": null,
+                "description": null,
+                "date": null,
+                "start_time": null,
+                "end_time": null,
+                "offer_type": null,
+                "offer_category": null,
+                "location": null,
+                "address_line_1": null,
+                "address_line_2": null,
+                "conditions": null,
+                }
+                """
+            return description
