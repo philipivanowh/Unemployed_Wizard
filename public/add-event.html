@@ -3,87 +3,71 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Share a Free Event</title>
+    <title>Add a Free Event</title>
     <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
     <style>
       :root {
-        --bg: #f6f7fb;
+        --bg: #ffffff;
         --surface: #ffffff;
-        --surface-2: #f8fafc;
-        --text: #0f172a;
-        --text-2: #475569;
-        --muted: #94a3b8;
-        --border: #e2e8f0;
-        --border-strong: #cbd5e1;
-        --brand: #4f46e5;
-        --brand-hover: #4338ca;
-        --brand-soft: #eef2ff;
-        --brand-ring: rgba(79, 70, 229, 0.18);
-        --danger: #dc2626;
-        --danger-soft: #fef2f2;
-        --success: #059669;
-        --success-soft: #ecfdf5;
-        --warn: #b45309;
-        --warn-soft: #fffbeb;
-        --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-        --shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 8px 24px rgba(15, 23, 42, 0.06);
-        --shadow-pop: 0 12px 32px rgba(15, 23, 42, 0.16), 0 2px 6px rgba(15, 23, 42, 0.08);
-        --radius: 14px;
-        --radius-sm: 10px;
+        --surface-2: #f5f5f5;
+        --text: #1a1a1a;
+        --text-2: #545454;
+        --muted: #8a8a8a;
+        --border: #dcdcdc;
+        --border-strong: #b5b5b5;
+        /* McGill red. --brand-text is a darker shade for red text on white, which needs more contrast. */
+        --brand: #ed1b2f;
+        --brand-hover: #c8102e;
+        --brand-text: #b5121b;
+        --danger: #b5121b;
+        --success: #1e6b3a;
+        --success-bg: #eef6f0;
+        --warn: #7a5200;
+        --warn-bg: #fbf5e6;
         color-scheme: light;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #0b1020;
-          --surface: #121a2e;
-          --surface-2: #0f172a;
-          --text: #e2e8f0;
-          --text-2: #a5b4c8;
-          --muted: #64748b;
-          --border: #1f2a44;
-          --border-strong: #2c3a5c;
-          --brand: #818cf8;
-          --brand-hover: #6366f1;
-          --brand-soft: rgba(129, 140, 248, 0.14);
-          --brand-ring: rgba(129, 140, 248, 0.28);
-          --danger: #f87171;
-          --danger-soft: rgba(248, 113, 113, 0.1);
-          --success: #34d399;
-          --success-soft: rgba(52, 211, 153, 0.1);
-          --warn: #fbbf24;
-          --warn-soft: rgba(251, 191, 36, 0.1);
-          --shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
-          --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5);
+          --bg: #141414;
+          --surface: #1b1b1b;
+          --surface-2: #232323;
+          --text: #ececec;
+          --text-2: #b3b3b3;
+          --muted: #808080;
+          --border: #333333;
+          --border-strong: #4a4a4a;
+          --brand-text: #ff7a85;
+          --danger: #ff7a85;
+          --success: #7ccf98;
+          --success-bg: #18271d;
+          --warn: #e8c36a;
+          --warn-bg: #2a2417;
           color-scheme: dark;
         }
       }
       * {
         box-sizing: border-box;
       }
-      html {
-        -webkit-font-smoothing: antialiased;
-      }
       body {
         margin: 0;
         min-height: 100vh;
         background: var(--bg);
         color: var(--text);
-        font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+        font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       }
       a {
-        color: var(--brand);
-        text-decoration: none;
+        color: var(--brand-text);
       }
       a:hover {
-        text-decoration: underline;
+        text-decoration: none;
       }
       svg.icon {
-        width: 18px;
-        height: 18px;
+        width: 16px;
+        height: 16px;
         flex: none;
         stroke: currentColor;
         fill: none;
-        stroke-width: 1.8;
+        stroke-width: 2;
         stroke-linecap: round;
         stroke-linejoin: round;
       }
@@ -98,95 +82,65 @@
       [hidden] {
         display: none !important;
       }
+      :focus-visible {
+        outline: 2px solid var(--text);
+        outline-offset: 2px;
+      }
 
       /* ---- Top bar ---- */
       .topbar {
-        position: sticky;
-        top: 0;
-        z-index: 1000;
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 24px;
         padding: 12px 24px;
-        background: color-mix(in srgb, var(--surface) 82%, transparent);
-        backdrop-filter: saturate(160%) blur(12px);
+        border-top: 4px solid var(--brand);
         border-bottom: 1px solid var(--border);
+        background: var(--surface);
       }
       .brand {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-weight: 700;
         color: var(--text);
-        letter-spacing: -0.01em;
-      }
-      .brand-mark {
-        display: grid;
-        place-items: center;
-        width: 30px;
-        height: 30px;
-        border-radius: 9px;
-        background: var(--brand);
-        color: #fff;
+        font-size: 17px;
+        font-weight: 700;
+        text-decoration: none;
       }
       .topbar nav {
-        margin-left: auto;
         display: flex;
-        gap: 4px;
+        gap: 20px;
+        margin-left: auto;
       }
       .topbar nav a {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 12px;
-        border-radius: 8px;
         color: var(--text-2);
         font-size: 14px;
-        font-weight: 500;
+        text-decoration: none;
       }
       .topbar nav a:hover {
-        background: var(--surface-2);
         color: var(--text);
-        text-decoration: none;
+        text-decoration: underline;
       }
 
       /* ---- Page ---- */
       .page {
-        max-width: 1120px;
+        max-width: 1080px;
         margin: 0 auto;
-        padding: 36px 24px 64px;
+        padding: 32px 24px 64px;
       }
       .page-head {
-        margin-bottom: 28px;
-      }
-      .eyebrow {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 4px 10px;
-        border-radius: 999px;
-        background: var(--brand-soft);
-        color: var(--brand);
-        font-size: 12px;
-        font-weight: 600;
-        letter-spacing: 0.02em;
+        margin-bottom: 24px;
       }
       .page-head h1 {
-        margin: 12px 0 6px;
-        font-size: clamp(26px, 3.2vw, 34px);
-        line-height: 1.15;
-        letter-spacing: -0.025em;
+        margin: 0 0 6px;
+        font-size: 28px;
+        line-height: 1.2;
       }
       .page-head p {
+        max-width: 600px;
         margin: 0;
         color: var(--text-2);
-        font-size: 16px;
-        max-width: 560px;
       }
       .layout {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 340px;
-        gap: 28px;
+        grid-template-columns: minmax(0, 1fr) 320px;
+        gap: 32px;
         align-items: start;
       }
       @media (max-width: 960px) {
@@ -195,56 +149,24 @@
         }
       }
 
-      /* ---- Form card & sections ---- */
+      /* ---- Form & sections ---- */
       .form-card {
         background: var(--surface);
         border: 1px solid var(--border);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow);
-        overflow: hidden;
       }
       .section {
-        padding: 24px 28px;
+        padding: 22px 24px;
         border-bottom: 1px solid var(--border);
       }
-      .section-head {
-        display: flex;
-        gap: 14px;
-        align-items: flex-start;
-        margin-bottom: 18px;
-      }
-      .step {
-        display: grid;
-        place-items: center;
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        background: var(--brand-soft);
-        color: var(--brand);
-        font-weight: 700;
-        font-size: 13px;
-        flex: none;
-      }
-      .section-head h2 {
-        margin: 0;
-        font-size: 16px;
-        letter-spacing: -0.01em;
-      }
-      .section-head p {
-        margin: 2px 0 0;
-        color: var(--text-2);
-        font-size: 13.5px;
+      .section h2 {
+        margin: 0 0 16px;
+        font-size: 17px;
       }
       .optional-tag {
-        margin-left: 8px;
-        padding: 1px 8px;
-        border-radius: 999px;
-        background: var(--surface-2);
-        border: 1px solid var(--border);
+        margin-left: 4px;
         color: var(--muted);
-        font-size: 11.5px;
-        font-weight: 600;
-        vertical-align: 2px;
+        font-size: 13px;
+        font-weight: 400;
       }
       .grid-2 {
         display: grid;
@@ -256,7 +178,7 @@
           grid-template-columns: 1fr;
         }
         .section {
-          padding: 20px;
+          padding: 18px 16px;
         }
       }
       .field {
@@ -268,34 +190,30 @@
       .label {
         display: flex;
         align-items: baseline;
-        gap: 6px;
-        margin-bottom: 7px;
-        font-size: 13.5px;
+        gap: 4px;
+        margin-bottom: 6px;
+        font-size: 14px;
         font-weight: 600;
-        color: var(--text);
       }
       .label .req {
         color: var(--danger);
       }
       .label .counter {
         margin-left: auto;
-        font-weight: 500;
         color: var(--muted);
         font-size: 12px;
+        font-weight: 400;
+        font-variant-numeric: tabular-nums;
       }
       .hint {
         margin-top: 6px;
         color: var(--text-2);
-        font-size: 12.5px;
+        font-size: 13px;
       }
       .error {
-        display: flex;
-        align-items: center;
-        gap: 6px;
         margin-top: 6px;
         color: var(--danger);
-        font-size: 12.5px;
-        font-weight: 500;
+        font-size: 13px;
       }
       .error:empty {
         display: none;
@@ -304,168 +222,151 @@
       /* ---- Inputs ---- */
       .control {
         position: relative;
-        display: flex;
-        align-items: center;
-      }
-      .control > .icon {
-        position: absolute;
-        left: 12px;
-        color: var(--muted);
-        pointer-events: none;
-        transition: color 0.15s;
-      }
-      .control:focus-within > .icon {
-        color: var(--brand);
       }
       .input,
       textarea.input {
         width: 100%;
-        height: 44px;
-        padding: 0 14px 0 40px;
-        font: inherit;
-        font-size: 15px;
-        color: var(--text);
-        background: var(--surface);
+        height: 40px;
+        padding: 0 12px;
         border: 1px solid var(--border-strong);
-        border-radius: var(--radius-sm);
-        box-shadow: var(--shadow-sm);
-        transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+        border-radius: 0;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
         outline: none;
-      }
-      .input.no-icon {
-        padding-left: 14px;
       }
       textarea.input {
         height: auto;
         min-height: 110px;
-        padding: 12px 14px;
+        padding: 10px 12px;
         resize: vertical;
-        line-height: 1.5;
       }
       .input::placeholder {
         color: var(--muted);
       }
-      .input:hover {
-        border-color: var(--muted);
-      }
+      /* Focus: a 2px dark border (no glow). */
       .input:focus,
       .chips:focus-within {
-        border-color: var(--brand);
-        box-shadow: 0 0 0 4px var(--brand-ring);
+        border-color: var(--text);
+        outline: 1px solid var(--text);
+        outline-offset: -2px;
       }
       .input[aria-invalid="true"],
       .chips[aria-invalid="true"] {
         border-color: var(--danger);
-        box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 14%, transparent);
-      }
-      input[type="date"].input::-webkit-calendar-picker-indicator {
-        opacity: 0.55;
-        cursor: pointer;
+        outline: 1px solid var(--danger);
+        outline-offset: -2px;
       }
 
       /* Quick date choices */
       .quick {
         display: flex;
         flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 10px;
+        gap: 6px;
+        margin-top: 8px;
       }
       .pill {
-        padding: 5px 12px;
+        padding: 4px 10px;
+        border: 1px solid var(--border-strong);
+        border-radius: 0;
+        background: var(--surface);
+        color: var(--text-2);
         font: inherit;
         font-size: 13px;
-        font-weight: 500;
-        color: var(--text-2);
-        background: var(--surface);
-        border: 1px solid var(--border-strong);
-        border-radius: 999px;
         cursor: pointer;
-        transition: all 0.15s;
       }
       .pill:hover {
-        border-color: var(--brand);
-        color: var(--brand);
+        border-color: var(--text);
+        color: var(--text);
       }
       .pill[aria-pressed="true"] {
-        background: var(--brand);
-        border-color: var(--brand);
-        color: #fff;
+        border-color: var(--text);
+        background: var(--text);
+        color: var(--bg);
       }
 
-      /* ---- Time picker ---- */
+      /* ---- Time picker and address suggestions (dropdown lists) ---- */
       .time-picker {
         position: relative;
       }
       .time-picker .input {
+        padding-right: 34px;
         cursor: pointer;
-        padding-right: 36px;
       }
       .time-picker .chevron {
         position: absolute;
-        right: 12px;
+        top: 12px;
+        right: 10px;
         color: var(--muted);
         pointer-events: none;
-        transition: transform 0.2s;
       }
       .time-picker.open .chevron {
         transform: rotate(180deg);
       }
-      .time-list {
-        position: absolute;
-        z-index: 1200;
-        top: calc(100% + 6px);
-        left: 0;
-        right: 0;
-        max-height: 264px;
-        margin: 0;
-        padding: 6px;
-        overflow-y: auto;
-        list-style: none;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        box-shadow: var(--shadow-pop);
-        animation: pop 0.14s ease-out;
-        overscroll-behavior: contain;
-      }
-      /* Address suggestions (same look as the time list). */
+      .time-list,
       .suggest-list {
         position: absolute;
         z-index: 1200;
-        top: calc(100% + 6px);
+        top: calc(100% - 1px);
         left: 0;
         right: 0;
-        max-height: 320px;
+        max-height: 280px;
         margin: 0;
-        padding: 6px;
+        padding: 0;
         overflow-y: auto;
         list-style: none;
         background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        box-shadow: var(--shadow-pop);
-        animation: pop 0.14s ease-out;
+        border: 1px solid var(--text);
         overscroll-behavior: contain;
+      }
+      .suggest-list {
+        max-height: 320px;
+      }
+      .time-option,
+      .suggest-option {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--border);
+        color: var(--text);
+        cursor: pointer;
+      }
+      .time-option:last-child,
+      .suggest-option:last-child {
+        border-bottom: 0;
+      }
+      .time-option {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 14px;
+        font-variant-numeric: tabular-nums;
+      }
+      .time-option .dur {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .time-option.active,
+      .suggest-option.active {
+        background: var(--surface-2);
+      }
+      .time-option[aria-selected="true"] {
+        font-weight: 700;
+      }
+      .time-option[aria-selected="true"]::after {
+        content: "✓";
+      }
+      .time-option[aria-selected="true"] .dur {
+        margin-left: auto;
+      }
+      .time-empty,
+      .suggest-note {
+        padding: 10px 12px;
+        color: var(--text-2);
+        font-size: 13px;
       }
       .suggest-option {
         display: flex;
-        align-items: flex-start;
-        gap: 10px;
-        padding: 8px 10px;
-        border-radius: 8px;
-        cursor: pointer;
-        color: var(--text);
-      }
-      .suggest-option > .icon {
-        flex: none;
-        margin-top: 2px;
-        color: var(--muted);
-      }
-      .suggest-option.active {
-        background: var(--brand-soft);
-      }
-      .suggest-option.active > .icon {
-        color: var(--brand);
+        flex-direction: column;
       }
       .suggest-text {
         display: flex;
@@ -479,66 +380,17 @@
       .suggest-detail {
         overflow: hidden;
         color: var(--text-2);
-        font-size: 12.5px;
+        font-size: 13px;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
       .suggest-tag {
-        margin-left: 6px;
-        padding: 1px 6px;
-        border-radius: 999px;
-        background: #fde8e8;
-        color: #b91c1c;
+        margin-left: 8px;
+        color: var(--brand-text);
         font-size: 11px;
         font-weight: 700;
-        vertical-align: 1px;
-      }
-      .suggest-note {
-        padding: 8px 10px;
-        color: var(--text-2);
-        font-size: 13px;
-      }
-      @keyframes pop {
-        from {
-          opacity: 0;
-          transform: translateY(-4px) scale(0.98);
-        }
-      }
-      .time-option {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 12px;
-        padding: 8px 10px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 14px;
-        font-variant-numeric: tabular-nums;
-        color: var(--text);
-      }
-      .time-option .dur {
-        color: var(--muted);
-        font-size: 12.5px;
-      }
-      .time-option.active {
-        background: var(--brand-soft);
-        color: var(--brand);
-      }
-      .time-option[aria-selected="true"] {
-        font-weight: 600;
-        color: var(--brand);
-      }
-      .time-option[aria-selected="true"]::after {
-        content: "✓";
-        font-weight: 700;
-      }
-      .time-option[aria-selected="true"] .dur {
-        margin-left: auto;
-      }
-      .time-empty {
-        padding: 10px;
-        color: var(--muted);
-        font-size: 13px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
       }
       .clear-time {
         margin-top: 6px;
@@ -547,20 +399,17 @@
         background: none;
         color: var(--text-2);
         font: inherit;
-        font-size: 12.5px;
+        font-size: 13px;
+        text-decoration: underline;
         cursor: pointer;
       }
       .clear-time:hover {
-        color: var(--brand);
+        color: var(--text);
       }
 
       /* ---- Map pin ---- */
       .map-wrap {
-        position: relative;
         border: 1px solid var(--border-strong);
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-        box-shadow: var(--shadow-sm);
       }
       #pin-map {
         height: 280px;
@@ -568,38 +417,25 @@
       }
       .map-status {
         display: flex;
-        align-items: flex-start;
+        align-items: baseline;
         gap: 10px;
-        padding: 10px 12px;
+        padding: 8px 12px;
+        border-top: 1px solid var(--border-strong);
         background: var(--surface-2);
-        border-top: 1px solid var(--border);
-        font-size: 13px;
         color: var(--text-2);
+        font-size: 13px;
       }
       .map-status .dot {
+        flex: none;
         width: 8px;
         height: 8px;
-        margin-top: 6px;
-        border-radius: 50%;
         background: var(--muted);
-        flex: none;
       }
       .map-status[data-state="ok"] .dot {
         background: var(--success);
-        box-shadow: 0 0 0 3px var(--success-soft);
       }
       .map-status[data-state="warn"] .dot {
         background: var(--warn);
-        box-shadow: 0 0 0 3px var(--warn-soft);
-      }
-      .map-status[data-state="busy"] .dot {
-        background: var(--brand);
-        animation: pulse 1s infinite;
-      }
-      @keyframes pulse {
-        50% {
-          opacity: 0.3;
-        }
       }
       .map-status span {
         flex: 1;
@@ -608,32 +444,30 @@
         padding: 0;
         border: 0;
         background: none;
-        color: var(--brand);
+        color: var(--brand-text);
         font: inherit;
-        font-weight: 600;
-        cursor: pointer;
+        text-decoration: underline;
         white-space: nowrap;
+        cursor: pointer;
       }
 
-      /* ---- Chips ---- */
+      /* ---- What's free (chips) ---- */
       .chips {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         gap: 6px;
-        min-height: 44px;
-        padding: 6px 10px 6px 40px;
-        background: var(--surface);
+        min-height: 40px;
+        padding: 4px 8px;
         border: 1px solid var(--border-strong);
-        border-radius: var(--radius-sm);
-        box-shadow: var(--shadow-sm);
+        background: var(--surface);
         cursor: text;
-        transition: border-color 0.15s, box-shadow 0.15s;
       }
       .chips input {
         flex: 1;
-        min-width: 120px;
+        min-width: 140px;
         height: 30px;
+        padding: 0 4px;
         border: 0;
         outline: none;
         background: transparent;
@@ -646,244 +480,180 @@
       .chip {
         display: inline-flex;
         align-items: center;
-        gap: 4px;
-        padding: 3px 4px 3px 10px;
-        border-radius: 999px;
-        background: var(--brand-soft);
-        color: var(--brand);
+        gap: 2px;
+        padding: 2px 2px 2px 8px;
+        border: 1px solid var(--border-strong);
+        background: var(--surface-2);
         font-size: 13px;
-        font-weight: 600;
-        animation: pop 0.14s ease-out;
       }
       .chip button {
-        display: grid;
-        place-items: center;
-        width: 18px;
-        height: 18px;
+        width: 20px;
+        height: 20px;
         padding: 0;
         border: 0;
-        border-radius: 50%;
         background: transparent;
-        color: inherit;
-        cursor: pointer;
-        font-size: 14px;
+        color: var(--text-2);
+        font-size: 15px;
         line-height: 1;
+        cursor: pointer;
       }
       .chip button:hover {
-        background: color-mix(in srgb, var(--brand) 18%, transparent);
+        color: var(--danger);
       }
 
-      /* ---- Photo drop zone ---- */
+      /* ---- Photo ---- */
       .dropzone {
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        padding: 18px;
-        border: 1.5px dashed var(--border-strong);
-        border-radius: var(--radius-sm);
+        display: block;
+        padding: 18px 16px;
+        border: 1px dashed var(--border-strong);
         background: var(--surface-2);
         cursor: pointer;
-        transition: border-color 0.15s, background 0.15s;
       }
       .dropzone:hover,
       .dropzone.over {
-        border-color: var(--brand);
-        background: var(--brand-soft);
+        border-color: var(--text);
       }
       .dropzone:focus-within {
-        box-shadow: 0 0 0 4px var(--brand-ring);
-        border-color: var(--brand);
-      }
-      .dropzone .drop-icon {
-        display: grid;
-        place-items: center;
-        width: 44px;
-        height: 44px;
-        border-radius: 12px;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        color: var(--brand);
-        flex: none;
+        border-style: solid;
+        border-color: var(--text);
+        outline: 1px solid var(--text);
+        outline-offset: -2px;
       }
       .dropzone strong {
         display: block;
         font-size: 14px;
+        font-weight: 600;
       }
       .dropzone small {
         color: var(--text-2);
-        font-size: 12.5px;
+        font-size: 13px;
       }
       .photo-selected {
         display: flex;
         align-items: center;
-        gap: 14px;
-        padding: 10px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius-sm);
-        background: var(--surface-2);
+        gap: 12px;
+        padding: 8px;
+        border: 1px solid var(--border-strong);
       }
       .photo-selected img {
         width: 64px;
         height: 64px;
         object-fit: cover;
-        border-radius: 8px;
       }
       .photo-selected .meta {
         flex: 1;
         min-width: 0;
-        font-size: 13.5px;
+        font-size: 14px;
       }
       .photo-selected .meta div {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        font-weight: 600;
       }
       .photo-selected .meta small {
         color: var(--text-2);
       }
 
-      /* ---- Footer & buttons ---- */
+      /* ---- Footer & submit ---- */
       .form-footer {
         display: flex;
         align-items: center;
         gap: 16px;
-        padding: 18px 28px;
-        background: var(--surface-2);
+        padding: 16px 24px;
       }
       .form-footer p {
-        margin: 0;
         flex: 1;
+        margin: 0;
         color: var(--text-2);
         font-size: 13px;
       }
       .btn-primary {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        height: 44px;
+        height: 42px;
         padding: 0 22px;
         border: 0;
-        border-radius: var(--radius-sm);
+        border-radius: 0;
         background: var(--brand);
-        color: #fff;
+        color: #ffffff;
         font: inherit;
-        font-weight: 600;
+        font-weight: 700;
         cursor: pointer;
-        box-shadow: var(--shadow-sm);
-        transition: transform 0.12s, background 0.15s;
       }
       .btn-primary:hover {
         background: var(--brand-hover);
       }
-      .btn-primary:active {
-        transform: translateY(1px);
-      }
-      .btn-primary:focus-visible,
-      .pill:focus-visible,
-      .link-btn:focus-visible,
-      .clear-time:focus-visible {
-        outline: 3px solid var(--brand-ring);
-        outline-offset: 2px;
-      }
       .btn-primary:disabled {
-        opacity: 0.7;
-        cursor: progress;
-      }
-      .spinner {
-        width: 16px;
-        height: 16px;
-        border: 2px solid rgba(255, 255, 255, 0.4);
-        border-top-color: #fff;
-        border-radius: 50%;
-        animation: spin 0.7s linear infinite;
-      }
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
+        opacity: 0.6;
+        cursor: default;
       }
       @media (max-width: 560px) {
         .form-footer {
           flex-direction: column;
           align-items: stretch;
-          padding: 18px 20px;
+          padding: 16px;
         }
       }
 
       /* ---- Preview ---- */
       .preview {
         position: sticky;
-        top: 84px;
+        top: 16px;
       }
       .preview-label {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin: 0 0 10px;
+        margin: 0 0 8px;
         color: var(--text-2);
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
+        font-size: 13px;
+        font-weight: 600;
       }
       .event-card {
-        background: var(--surface);
         border: 1px solid var(--border);
-        border-radius: var(--radius);
-        box-shadow: var(--shadow);
-        overflow: hidden;
+        background: var(--surface);
       }
+      /* The cover only shows once there's a photo. */
       .event-card .cover {
-        position: relative;
-        height: 150px;
-        background: var(--brand-soft);
+        height: 160px;
         border-bottom: 1px solid var(--border);
-        display: grid;
-        place-items: center;
-        color: var(--brand);
+      }
+      .event-card .cover:has(> img[hidden]) {
+        display: none;
       }
       .event-card .cover img {
-        position: absolute;
-        inset: 0;
+        display: block;
         width: 100%;
         height: 100%;
         object-fit: cover;
       }
-      .event-card .date-badge {
-        position: absolute;
-        left: 14px;
-        bottom: -22px;
-        width: 54px;
-        padding: 6px 0;
+      .event-card .body {
+        padding: 16px;
+      }
+      .card-head {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        margin-bottom: 10px;
+      }
+      .date-badge {
+        flex: none;
+        width: 48px;
+        padding: 4px 0;
+        border: 1px solid var(--border-strong);
         text-align: center;
-        color: var(--text);
-        background: var(--surface);
-        border-radius: 12px;
-        box-shadow: var(--shadow);
-        z-index: 1;
       }
       .date-badge .m {
         display: block;
-        color: var(--danger);
+        color: var(--brand-text);
         font-size: 11px;
-        font-weight: 800;
-        letter-spacing: 0.08em;
+        font-weight: 700;
+        letter-spacing: 0.05em;
       }
       .date-badge .d {
         display: block;
         font-size: 20px;
-        font-weight: 800;
+        font-weight: 700;
         line-height: 1.1;
       }
-      .event-card .body {
-        padding: 32px 18px 18px;
-      }
       .event-card h3 {
-        margin: 0 0 12px;
-        font-size: 18px;
-        letter-spacing: -0.015em;
+        margin: 2px 0 0;
+        font-size: 17px;
         line-height: 1.3;
         word-wrap: break-word;
       }
@@ -891,121 +661,97 @@
         color: var(--muted);
       }
       .meta-row {
-        display: flex;
-        gap: 10px;
-        align-items: flex-start;
-        margin: 8px 0;
+        margin: 4px 0;
         color: var(--text-2);
-        font-size: 13.5px;
+        font-size: 14px;
         word-break: break-word;
-      }
-      .meta-row .icon {
-        width: 16px;
-        height: 16px;
-        margin-top: 2px;
-        color: var(--muted);
       }
       .preview-chips {
         display: flex;
         flex-wrap: wrap;
-        gap: 6px;
-        margin-top: 12px;
+        gap: 4px;
+        margin-top: 10px;
       }
       .preview-chips span {
-        padding: 3px 10px;
-        border-radius: 999px;
-        background: var(--success-soft);
-        color: var(--success);
-        font-size: 12.5px;
-        font-weight: 600;
+        padding: 1px 6px;
+        border: 1px solid var(--border-strong);
+        font-size: 13px;
       }
       .event-card .desc {
-        margin: 12px 0 0;
-        color: var(--text-2);
-        font-size: 13.5px;
         display: -webkit-box;
+        margin: 10px 0 0;
+        overflow: hidden;
+        color: var(--text-2);
+        font-size: 14px;
         -webkit-line-clamp: 4;
         -webkit-box-orient: vertical;
-        overflow: hidden;
       }
       .map-note {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        margin-top: 14px;
-        padding: 10px 12px;
-        border-radius: var(--radius-sm);
-        font-size: 13px;
-        font-weight: 500;
+        margin-top: 12px;
+        padding: 6px 10px;
+        border-left: 3px solid var(--border-strong);
         background: var(--surface-2);
         color: var(--text-2);
-        border: 1px solid var(--border);
+        font-size: 13px;
       }
       .map-note[data-state="ok"] {
-        background: var(--success-soft);
+        border-left-color: var(--success);
+        background: var(--success-bg);
         color: var(--success);
-        border-color: transparent;
       }
       .map-note[data-state="warn"] {
-        background: var(--warn-soft);
+        border-left-color: var(--warn);
+        background: var(--warn-bg);
         color: var(--warn);
-        border-color: transparent;
       }
 
-      /* ---- Banners ---- */
+      /* ---- Banners (result / errors) ---- */
       .banner {
-        display: flex;
-        gap: 14px;
-        align-items: flex-start;
-        padding: 16px 18px;
         margin-bottom: 20px;
-        border-radius: var(--radius);
+        padding: 14px 16px;
         border: 1px solid var(--border);
+        border-left: 4px solid var(--border-strong);
         background: var(--surface);
-        box-shadow: var(--shadow);
-        animation: pop 0.2s ease-out;
-        scroll-margin-top: 84px; /* stay clear of the sticky top bar */
       }
-      .banner .badge {
-        display: grid;
-        place-items: center;
-        width: 36px;
-        height: 36px;
-        border-radius: 50%;
-        flex: none;
+      .banner.success {
+        border-left-color: var(--success);
       }
-      .banner.success .badge {
-        background: var(--success-soft);
-        color: var(--success);
-      }
-      .banner.error-banner .badge {
-        background: var(--danger-soft);
-        color: var(--danger);
+      .banner.error-banner {
+        border-left-color: var(--danger);
       }
       .banner h2 {
-        margin: 0 0 2px;
+        margin: 0 0 4px;
         font-size: 16px;
       }
       .banner .content {
-        flex: 1;
-        min-width: 0;
         color: var(--text-2);
         font-size: 14px;
       }
       .banner .warn {
         margin: 10px 0 0;
-        padding: 8px 12px;
-        border-radius: 8px;
-        background: var(--warn-soft);
+        padding: 6px 10px;
+        background: var(--warn-bg);
         color: var(--warn);
         font-size: 13px;
       }
       .banner .actions {
         display: flex;
         flex-wrap: wrap;
-        gap: 18px;
+        gap: 20px;
         margin-top: 10px;
         font-weight: 600;
+      }
+
+      /* Leaflet's zoom buttons: square and flat like the rest of the page. */
+      .leaflet-bar {
+        border: 1px solid var(--border-strong) !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+      }
+      .leaflet-bar a,
+      .leaflet-bar a:first-child,
+      .leaflet-bar a:last-child {
+        border-radius: 0 !important;
       }
 
       /* Leaflet in dark mode */
@@ -1019,39 +765,22 @@
   <body>
     <svg width="0" height="0" style="position: absolute" aria-hidden="true">
       <defs>
-        <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="16" rx="2.5" /><path d="M3 9.5h18M8 3v3M16 3v3" /></symbol>
-        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" /></symbol>
-        <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.1-7-11.5A7 7 0 0 1 19 9.5C19 14.9 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></symbol>
-        <symbol id="i-door" viewBox="0 0 24 24"><path d="M5 21V4.5A1.5 1.5 0 0 1 6.5 3h11A1.5 1.5 0 0 1 19 4.5V21M3 21h18" /><circle cx="15" cy="12" r="1" /></symbol>
-        <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.5" /></symbol>
-        <symbol id="i-gift" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="4" rx="1" /><path d="M5 12v8h14v-8M12 8v12M12 8S10.5 3 8 3.5 7 8 12 8zM12 8s1.5-5 4-4.5S17 8 12 8z" /></symbol>
-        <symbol id="i-text" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10" /></symbol>
-        <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" /><circle cx="9" cy="10" r="2" /><path d="m21 16-5-5-9 9" /></symbol>
         <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6" /></symbol>
-        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></symbol>
-        <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" /></symbol>
-        <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4 3 6.5v13.5L9 17.5l6 2.5 6-2.5V4l-6 2.5L9 4zM9 4v13.5M15 6.5V20" /></symbol>
-        <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6" /></symbol>
-        <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z" /></symbol>
       </defs>
     </svg>
 
     <header class="topbar">
-      <a class="brand" href="/">
-        <span class="brand-mark"><svg class="icon"><use href="#i-gift" /></svg></span>
-        Free Events
-      </a>
+      <a class="brand" href="/">Free Events</a>
       <nav>
-        <a href="/"><svg class="icon"><use href="#i-map" /></svg>Map</a>
+        <a href="/">Map</a>
         <a href="/area-editor.html">Edit area</a>
       </nav>
     </header>
 
     <main class="page">
       <div class="page-head">
-        <span class="eyebrow"><svg class="icon" style="width: 14px; height: 14px"><use href="#i-sparkle" /></svg>New event</span>
-        <h1>Share a free event</h1>
-        <p>Let people nearby know where to find free food and goodies. It takes about a minute.</p>
+        <h1>Add a free event</h1>
+        <p>Post free food or giveaways so people nearby can find them on the map.</p>
       </div>
 
       <div id="result" class="banner success" hidden role="status"></div>
@@ -1059,31 +788,18 @@
 
       <div class="layout">
         <form id="event-form" class="form-card" novalidate>
-          <!-- 1. Basics -->
           <section class="section" aria-labelledby="s1">
-            <div class="section-head">
-              <span class="step">1</span>
-              <div>
-                <h2 id="s1">The basics</h2>
-                <p>What's happening and when.</p>
-              </div>
-            </div>
+            <h2 id="s1">Event</h2>
 
             <div class="field">
               <label class="label" for="title">Event name <span class="req" aria-hidden="true">*</span><span class="counter" id="title-count">0/120</span></label>
-              <div class="control">
-                <svg class="icon"><use href="#i-tag" /></svg>
-                <input class="input" id="title" name="title" type="text" required maxlength="120" placeholder="e.g. Pizza after the CS talk" autocomplete="off" />
-              </div>
+              <input class="input" id="title" name="title" type="text" required maxlength="120" placeholder="e.g. Pizza after the CS talk" autocomplete="off" />
               <div class="error" id="title-error"></div>
             </div>
 
             <div class="field">
               <label class="label" for="date">Date <span class="req" aria-hidden="true">*</span></label>
-              <div class="control">
-                <svg class="icon"><use href="#i-calendar" /></svg>
-                <input class="input" id="date" name="date" type="date" required />
-              </div>
+              <input class="input" id="date" name="date" type="date" required />
               <div class="quick" role="group" aria-label="Quick date">
                 <button type="button" class="pill" data-date="today">Today</button>
                 <button type="button" class="pill" data-date="tomorrow">Tomorrow</button>
@@ -1100,30 +816,22 @@
                 <div class="error" id="startTime-error"></div>
               </div>
               <div class="field">
-                <label class="label" for="endTime">Ends <span class="optional-tag">Optional</span></label>
+                <label class="label" for="endTime">Ends <span class="optional-tag">optional</span></label>
                 <div data-time-picker="endTime" data-placeholder="Add an end time"></div>
                 <div class="error" id="endTime-error"></div>
               </div>
             </div>
           </section>
 
-          <!-- 2. Location -->
           <section class="section" aria-labelledby="s2">
-            <div class="section-head">
-              <span class="step">2</span>
-              <div>
-                <h2 id="s2">Location</h2>
-                <p>Where people should go.</p>
-              </div>
-            </div>
+            <h2 id="s2">Where</h2>
 
             <div class="field">
               <label class="label" for="address">Address <span class="req" aria-hidden="true">*</span></label>
               <div class="control">
-                <svg class="icon"><use href="#i-pin" /></svg>
                 <input class="input" id="address" name="address" type="text" required maxlength="300" placeholder="e.g. 845 Sherbrooke St W, or a McGill building like Trottier" autocomplete="off" />
               </div>
-              <div class="hint">Start typing an address or a McGill building name (Trottier, SSMU, Mac Eng…) and pick a suggestion. We'll drop a pin so you can check the spot.</div>
+              <div class="hint">Type an address or a McGill building (Trottier, SSMU, Mac Eng…) and pick a suggestion. Check the pin below.</div>
               <div class="error" id="address-error"></div>
             </div>
 
@@ -1139,47 +847,36 @@
             </div>
 
             <div class="field">
-              <label class="label" for="roomNumber">Room or spot <span class="optional-tag">Optional</span></label>
-              <div class="control">
-                <svg class="icon"><use href="#i-door" /></svg>
-                <input class="input" id="roomNumber" name="roomNumber" type="text" maxlength="50" placeholder="e.g. Room B201, 2nd floor lounge" />
-              </div>
+              <label class="label" for="roomNumber">Room or spot <span class="optional-tag">optional</span></label>
+              <input class="input" id="roomNumber" name="roomNumber" type="text" maxlength="50" placeholder="e.g. Room B201, 2nd floor lounge" />
               <div class="error" id="roomNumber-error"></div>
             </div>
           </section>
 
-          <!-- 3. Details -->
           <section class="section" aria-labelledby="s3">
-            <div class="section-head">
-              <span class="step">3</span>
-              <div>
-                <h2 id="s3">Details <span class="optional-tag">Optional</span></h2>
-                <p>Help people decide to come.</p>
-              </div>
-            </div>
+            <h2 id="s3">Details <span class="optional-tag">optional</span></h2>
 
             <div class="field">
               <label class="label" for="freeItems">What's free</label>
               <div class="chips" id="freeItems-box">
-                <svg class="icon" style="position: absolute; left: 12px; color: var(--muted)"><use href="#i-gift" /></svg>
                 <input id="freeItems" type="text" placeholder="Type an item and press Enter" autocomplete="off" />
               </div>
-              <div class="hint">Press Enter or comma after each item. Pizza, Coffee, T-shirts…</div>
+              <div class="hint">Separate items with Enter or a comma: pizza, coffee, T-shirts.</div>
               <div class="error" id="freeItems-error"></div>
             </div>
 
             <div class="field">
               <label class="label" for="description">Description <span class="counter" id="description-count">0/5000</span></label>
-              <textarea class="input" id="description" name="description" maxlength="5000" placeholder="Leftover pizza from the guest lecture. First come, first served!"></textarea>
+              <textarea class="input" id="description" name="description" maxlength="5000" placeholder="e.g. Leftover pizza from the guest lecture. First come, first served."></textarea>
               <div class="error" id="description-error"></div>
             </div>
 
             <div class="field">
-              <span class="label" id="photo-label">Cover photo</span>
+              <span class="label" id="photo-label">Photo</span>
               <label class="dropzone" id="dropzone">
                 <input class="sr-only" id="thumbnail" name="thumbnail" type="file" accept="image/jpeg,image/png,image/webp,image/gif" aria-labelledby="photo-label" />
-                <span class="drop-icon"><svg class="icon" style="width: 22px; height: 22px"><use href="#i-image" /></svg></span>
-                <span><strong>Drop a photo here, or click to browse</strong><small>JPEG, PNG, WebP or GIF · up to 10 MB</small></span>
+                <strong>Choose a photo, or drag one here</strong>
+                <small>JPEG, PNG, WebP or GIF, up to 10 MB</small>
               </label>
               <div class="photo-selected" id="photo-selected" hidden>
                 <img id="thumbnail-preview" alt="Selected photo" />
@@ -1191,26 +888,25 @@
           </section>
 
           <div class="form-footer">
-            <p><span style="color: var(--danger)">*</span> Required. Your event appears on the map right away.</p>
-            <button type="submit" class="btn-primary" id="submit"><svg class="icon"><use href="#i-send" /></svg><span>Publish event</span></button>
+            <p><span style="color: var(--danger)">*</span> Required. The event appears on the map as soon as it's published.</p>
+            <button type="submit" class="btn-primary" id="submit">Publish event</button>
           </div>
         </form>
 
         <aside class="preview" aria-label="Preview">
-          <p class="preview-label"><svg class="icon" style="width: 14px; height: 14px"><use href="#i-sparkle" /></svg>Live preview</p>
+          <p class="preview-label">Preview</p>
           <article class="event-card">
-            <div class="cover" id="pv-cover">
-              <svg class="icon" style="width: 40px; height: 40px; stroke-width: 1.4"><use href="#i-gift" /></svg>
-              <img id="pv-photo" alt="" hidden />
-              <div class="date-badge"><span class="m" id="pv-month">—</span><span class="d" id="pv-day">—</span></div>
-            </div>
+            <div class="cover" id="pv-cover"><img id="pv-photo" alt="" hidden /></div>
             <div class="body">
-              <h3 id="pv-title" class="placeholder">Your event name</h3>
-              <div class="meta-row"><svg class="icon"><use href="#i-clock" /></svg><span id="pv-when">Pick a date and time</span></div>
-              <div class="meta-row"><svg class="icon"><use href="#i-pin" /></svg><span id="pv-where">Add an address</span></div>
+              <div class="card-head">
+                <div class="date-badge"><span class="m" id="pv-month">—</span><span class="d" id="pv-day">—</span></div>
+                <h3 id="pv-title" class="placeholder">Your event name</h3>
+              </div>
+              <p class="meta-row" id="pv-when">Pick a date and time</p>
+              <p class="meta-row" id="pv-where">Add an address</p>
               <div class="preview-chips" id="pv-items"></div>
               <p class="desc" id="pv-desc" hidden></p>
-              <div class="map-note" id="pv-map" data-state="idle"><svg class="icon" style="width: 16px; height: 16px"><use href="#i-map" /></svg><span id="pv-map-text">Add a location to place it on the map</span></div>
+              <div class="map-note" id="pv-map" data-state="idle"><span id="pv-map-text">Add a location to place it on the map</span></div>
             </div>
           </article>
         </aside>

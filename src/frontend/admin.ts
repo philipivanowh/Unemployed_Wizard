@@ -91,14 +91,14 @@ function mountAdminBar(access: EditAccess, onChange: (access: EditAccess) => voi
   const style = document.createElement("style");
   style.textContent = `
     #admin-bar { position: fixed; left: 12px; bottom: 12px; z-index: 3000; display: flex; align-items: center;
-      gap: 10px; padding: 8px 10px 8px 12px; border-radius: 10px; background: #111827; color: #f9fafb;
-      font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
-    #admin-bar b { color: #fbbf24; }
-    #admin-bar button { border: 0; border-radius: 6px; padding: 5px 10px; font: inherit; font-weight: 600; cursor: pointer; }
-    #admin-bar .on { background: #16a34a; color: #fff; }
-    #admin-bar .off { background: #dc2626; color: #fff; }
-    #admin-bar .leave { background: transparent; color: #9ca3af; padding: 5px 4px; font-weight: 400; }
-    #admin-bar .leave:hover { color: #f9fafb; }
+      gap: 10px; padding: 8px 10px 8px 12px; background: #1a1a1a; color: #f2f2f2; border: 1px solid #000;
+      font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; }
+    #admin-bar b { color: #ffffff; }
+    #admin-bar button { border: 0; padding: 5px 10px; font: inherit; font-weight: 700; cursor: pointer; }
+    #admin-bar .on { background: #1e6b3a; color: #fff; }
+    #admin-bar .off { background: #ed1b2f; color: #fff; }
+    #admin-bar .leave { background: transparent; color: #b3b3b3; padding: 5px 4px; font-weight: 400; text-decoration: underline; }
+    #admin-bar .leave:hover { color: #ffffff; }
   `;
   document.head.append(style);
 
