@@ -6,11 +6,7 @@ import { config } from "./config.ts";
 import { HttpError } from "./errors.ts";
 import { eventsRouter } from "./events/routes.ts";
 import { geocodeRouter } from "./geocode-route.ts";
-<<<<<<< Updated upstream
-=======
-import { instagramRouter } from "./instagram-route.ts";
 import { mapDataRouter } from "./mapdata.ts";
->>>>>>> Stashed changes
 import { settingsRouter } from "./settings-route.ts";
 import { walkwaysRouter } from "./walkways.ts";
 
