@@ -39,13 +39,21 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_event_pictures_event ON event_pictures (event_id, position);
 `);
 
-// Databases created before coordinates existed get the new columns added.
+// Databases created before these columns existed get them added.
 const eventColumns = new Set(
   (db.prepare("PRAGMA table_info(events)").all() as { name: string }[]).map((c) => c.name),
 );
-for (const column of ["latitude", "longitude"]) {
-  if (!eventColumns.has(column)) db.exec(`ALTER TABLE events ADD COLUMN ${column} REAL`);
+const addedColumns: [string, string][] = [
+  ["latitude", "REAL"],
+  ["longitude", "REAL"],
+  ["instagram_account", "TEXT"], // Instagram username the event came from, if any
+  ["instagram_post_url", "TEXT"], // that post's permalink
+];
+for (const [column, type] of addedColumns) {
+  if (!eventColumns.has(column)) db.exec(`ALTER TABLE events ADD COLUMN ${column} ${type}`);
 }
+// Briefly, events stored their Instagram post's timestamp; the post's URL replaced it.
+if (eventColumns.has("instagram_posted_at")) db.exec("ALTER TABLE events DROP COLUMN instagram_posted_at");
 
 /** Run `fn` inside a SQLite transaction (node:sqlite has no built-in helper). */
 export function transaction<T>(fn: () => T): T {

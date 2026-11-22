@@ -173,6 +173,8 @@ address can't be found, both coordinates are `null`. At startup the server retri
 | `DELETE` | `/api/events/:id/pictures/:pictureId`   | Delete one extra picture        |
 | `GET`    | `/api/settings`                         | `{ publicEditing, admin, canEdit }` for the caller |
 | `PUT`    | `/api/settings`                         | Admin only: `{ "publicEditing": true \| false }` |
+| `GET`    | `/api/instagram/accounts/:username`     | Links to the account's posts already uploaded (see [Instagram sources](#instagram-sources)) |
+| `GET`    | `/api/instagram/accounts`               | Every Instagram account events came from |
 
 When visitor editing is off, the `POST`, `PATCH` and `DELETE` routes above need the admin key in an
 `X-Admin-Key` header and otherwise answer `403`.
@@ -191,6 +193,56 @@ File fields: `thumbnail` (one image) and `pictures` (multiple images).
 - Uploaded `pictures` are **added** to the existing ones.
 - `removePictureIds` deletes existing pictures. It takes a JSON array or a comma-separated list.
 - An empty `endTime` or `roomNumber` clears that field.
+
+### Instagram sources
+
+Events made by the Instagram scraper (`src/instagram_scrapper/`, parsed by `src/post_parser/`) say where they came
+from, so the scraper knows which posts it has already handled.
+
+**When creating an event**, `POST /api/events` takes two optional extra fields:
+
+- `instagramAccount`: the account the event came from. It accepts `mcgillmagicclub`, `@McGillMagicClub` or a profile
+  link like `https://www.instagram.com/mcgillmagicclub/`, and is saved as the lowercase username. Empty means none.
+  A value that isn't a valid username is rejected with `400`: usernames are 1–30 letters, numbers, `.` and `_`, and
+  can't start or end with `.` or have `..`. Post links (`/p/…`, `/reel/…`) are rejected too. This only checks the
+  format; it doesn't ask Instagram whether the account exists.
+- `instagramPostUrl`: the link to the post the event was made from. Pass the scraper's `permalink`
+  (`https://www.instagram.com/p/C1abcDEF/`). `/reel/…` and `/tv/…` links, `instagram.com/<user>/p/…` links and links
+  with `?igsh=…` work too. It's saved in canonical form (`https://www.instagram.com/p/C1abcDEF/`). It needs
+  `instagramAccount`. Anything that isn't a post link is rejected with `400`.
+
+With both fields, the post is added to the account's **list of uploaded posts**, in the same transaction as the
+event. Posts are identified by their shortcode (`C1abcDEF`), which is case-sensitive and the same for `/p/` and
+`/reel/` links. Uploading a post that's already on a list answers **`409`**, with the existing event's id in
+`details.eventId`, and saves nothing: no event and no photo. This also holds when two uploads of one post arrive at
+the same moment. Deleting an event keeps its post on the list, with `eventId` becoming `null`, so the scraper doesn't
+bring back an event a moderator removed. Events return both fields (`null` when not from Instagram). They're set
+once, when the event is created; `PATCH` ignores them.
+
+**Asking which posts are done:** `GET /api/instagram/accounts/mcgillmagicclub` (or `@name`, or a URL-encoded profile
+link) returns the links to that account's uploaded posts, newest upload first:
+
+```json
+{ "username": "mcgillmagicclub", "postUrls": ["https://www.instagram.com/p/DXyz_-123/", "https://www.instagram.com/p/C1abcDEF/"] }
+```
+
+The list is empty for an account nothing has come from yet, and grows as events are created. An invalid username
+gets `400`. `GET /api/instagram/accounts` lists every account with `postCount` and `lastUploadedAt`.
+
+The intended loop, per account: `GET` the list once, fetch the account's recent posts, skip any whose `permalink`
+is in the list (a Python `set` makes that instant), parse the rest, and `POST` each one with `instagramAccount` and
+`instagramPostUrl`. A `409` just means another run got there first.
+
+```sh
+curl http://localhost:3000/api/instagram/accounts/mcgillmagicclub
+curl -X POST http://localhost:3000/api/events -H "Content-Type: application/json" \
+  -d '{"title":"Free pizza","date":"2026-12-05","startTime":"12:00","address":"Trottier",
+       "instagramAccount":"mcgillmagicclub","instagramPostUrl":"https://www.instagram.com/p/C1abcDEF/"}'
+```
+
+**Speed.** Lookups use SQLite indexes: posts by shortcode (the primary key) and by account. With 200,000 uploaded
+posts across 2,000 accounts, listing an account's 100 URLs takes about 0.1 ms, and checking one post about 0.01 ms.
+That's tiny next to fetching, OCR-ing and parsing a post, which takes seconds.
 
 ### Examples
 

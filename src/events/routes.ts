@@ -2,6 +2,7 @@ import { Router, type Request } from "express";
 import { config } from "../config.ts";
 import { HttpError } from "../errors.ts";
 import { geocodeAddress } from "../geocode.ts";
+import { findInstagramPost, isDuplicatePostError } from "../instagram.ts";
 import { deleteUploads, eventImagesUpload, getUploadedImages, uploadUrl } from "../uploads.ts";
 import { requireEditAccess } from "../settings.ts";
 import * as repo from "./repository.ts";
@@ -67,12 +68,31 @@ eventsRouter.get("/:id", (req, res) => {
   res.json(serialize(event));
 });
 
+/** 409 for a post that was uploaded already, pointing at its event. */
+function alreadyUploaded(url: string, eventId: string | null): HttpError {
+  return new HttpError(409, "This Instagram post was already uploaded", { instagramPostUrl: url, eventId });
+}
+
 // POST /api/events  (multipart/form-data or JSON)
+// Optional `instagramAccount` + `instagramPostUrl` mark an event made from an Instagram post
+// and add the post to that account's list of uploaded posts. Uploading the same post twice
+// answers 409.
 eventsRouter.post("/", requireEditAccess, eventImagesUpload, async (req, res) => {
   const event = await withUploadCleanup(req, async () => {
-    const { latitude, longitude, ...input } = createEventSchema.parse(req.body ?? {});
+    const { latitude, longitude, instagramAccount, instagramPostUrl, ...input } = createEventSchema.parse(
+      req.body ?? {},
+    );
     assertCoordinatePair(latitude, longitude);
     assertTimeOrder(input.startTime, input.endTime ?? null);
+    if (instagramPostUrl && !instagramAccount) {
+      throw new HttpError(400, "Validation failed", [
+        { path: "instagramAccount", message: "Send instagramAccount with instagramPostUrl" },
+      ]);
+    }
+    // Checked before the address lookup, so a repeat costs nothing. The database
+    // constraint below still catches two uploads of one post arriving at once.
+    const uploaded = instagramPostUrl ? findInstagramPost(instagramPostUrl.shortcode) : null;
+    if (uploaded) throw alreadyUploaded(uploaded.url, uploaded.eventId);
 
     // Use coordinates sent by the client, otherwise look the address up.
     const coords =
@@ -88,7 +108,18 @@ eventsRouter.post("/", requireEditAccess, eventImagesUpload, async (req, res) =>
     };
 
     const images = getUploadedImages(req);
-    return repo.createEvent(fields, { thumbnail: images.thumbnail ?? null, pictures: images.pictures });
+    try {
+      return repo.createEvent(
+        fields,
+        { thumbnail: images.thumbnail ?? null, pictures: images.pictures },
+        { instagramAccount: instagramAccount ?? null, instagramPost: instagramPostUrl ?? null },
+      );
+    } catch (err) {
+      if (instagramPostUrl && isDuplicatePostError(err)) {
+        throw alreadyUploaded(instagramPostUrl.url, findInstagramPost(instagramPostUrl.shortcode)?.eventId ?? null);
+      }
+      throw err;
+    }
   });
   res.status(201).location(`/api/events/${event.id}`).json(serialize(event));
 });

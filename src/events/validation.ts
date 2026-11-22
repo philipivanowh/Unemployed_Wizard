@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseInstagramPostUrl, parseInstagramUsername } from "../instagram.ts";
 
 // multipart/form-data sends everything as strings, so these helpers coerce
 // form values into the shapes we validate. JSON bodies pass through as-is.
@@ -71,6 +72,46 @@ const eventFields = {
   longitude: coordinate(-180, 180),
 };
 
+/** Instagram username, "@username" or profile link -> lowercase username. Empty means none. */
+export const instagramAccountField = z.preprocess(
+  emptyToNull,
+  z
+    .string()
+    .max(300)
+    .transform((value, ctx) => {
+      const username = parseInstagramUsername(value);
+      if (!username) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Not a valid Instagram account. Use the username (mcgillmagicclub), @username or a profile link.",
+        });
+        return z.NEVER;
+      }
+      return username;
+    })
+    .nullable(),
+);
+
+/** A post's permalink (https://www.instagram.com/p/C1abcDEF/, /reel/…) -> { shortcode, canonical url }. */
+const instagramPostUrlField = z.preprocess(
+  emptyToNull,
+  z
+    .string()
+    .max(500)
+    .transform((value, ctx) => {
+      const post = parseInstagramPostUrl(value);
+      if (!post) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Not an Instagram post link. Expected something like https://www.instagram.com/p/C1abcDEF/",
+        });
+        return z.NEVER;
+      }
+      return post;
+    })
+    .nullable(),
+);
+
 export const createEventSchema = z.object({
   ...eventFields,
   // Only name, date, start time and address are required to create an event.
@@ -80,6 +121,10 @@ export const createEventSchema = z.object({
   description: eventFields.description.optional(),
   latitude: eventFields.latitude.optional(),
   longitude: eventFields.longitude.optional(),
+  /** Instagram account the event came from (set by the scraper). Optional. */
+  instagramAccount: instagramAccountField.optional(),
+  /** Link to the Instagram post the event came from. Needs instagramAccount. */
+  instagramPostUrl: instagramPostUrlField.optional(),
 });
 
 export const updateEventSchema = z

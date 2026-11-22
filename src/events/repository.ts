@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { SQLInputValue } from "node:sqlite";
 import { db, transaction } from "../db.ts";
+import { recordInstagramPost, type InstagramPost } from "../instagram.ts";
 
 export interface EventFields {
   title: string;
@@ -20,7 +21,15 @@ export interface Picture {
   filename: string;
 }
 
-export interface EventRecord extends EventFields {
+/** Where an event came from, when the scraper created it from an Instagram post. */
+export interface EventSource {
+  /** Lowercase username, without "@". */
+  instagramAccount: string | null;
+  /** The post's canonical permalink. */
+  instagramPostUrl: string | null;
+}
+
+export interface EventRecord extends EventFields, EventSource {
   id: string;
   thumbnail: string | null;
   pictures: Picture[];
@@ -41,6 +50,8 @@ interface EventRow {
   thumbnail: string | null;
   latitude: number | null;
   longitude: number | null;
+  instagram_account: string | null;
+  instagram_post_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -56,8 +67,9 @@ const stmt = {
   getEvent: db.prepare("SELECT * FROM events WHERE id = ?"),
   insertEvent: db.prepare(`
     INSERT INTO events (id, title, date, start_time, end_time, address, room_number,
-                        free_items, description, thumbnail, latitude, longitude, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+                        free_items, description, thumbnail, latitude, longitude,
+                        instagram_account, instagram_post_url, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
   updateEvent: db.prepare(`
     UPDATE events SET title = ?, date = ?, start_time = ?, end_time = ?, address = ?,
                       room_number = ?, free_items = ?, description = ?, thumbnail = ?,
@@ -96,6 +108,8 @@ function toRecord(row: EventRow, pictures: PictureRow[]): EventRecord {
     description: row.description,
     latitude: row.latitude,
     longitude: row.longitude,
+    instagramAccount: row.instagram_account ?? null,
+    instagramPostUrl: row.instagram_post_url ?? null,
     thumbnail: row.thumbnail,
     pictures: pictures.map((p) => ({ id: p.id, filename: p.filename })),
     createdAt: row.created_at,
@@ -163,9 +177,18 @@ export function listEvents(opts: ListEventsOptions): { events: EventRecord[]; to
   return { events: rows.map((r) => toRecord(r, byEvent.get(r.id) ?? [])), total };
 }
 
+/**
+ * Saves a new event. If it came from an Instagram post, the post is added to its account's
+ * list of uploaded posts in the same transaction. Throws (see isDuplicatePostError) if that
+ * post was uploaded before; nothing is saved then.
+ */
 export function createEvent(
   fields: EventFields,
   images: { thumbnail: string | null; pictures: string[] },
+  source: { instagramAccount: string | null; instagramPost: InstagramPost | null } = {
+    instagramAccount: null,
+    instagramPost: null,
+  },
 ): EventRecord {
   const id = randomUUID();
   const now = new Date().toISOString();
@@ -183,10 +206,15 @@ export function createEvent(
       images.thumbnail,
       fields.latitude,
       fields.longitude,
+      source.instagramAccount,
+      source.instagramPost?.url ?? null,
       now,
       now,
     );
     insertPictures(id, images.pictures, now);
+    if (source.instagramAccount && source.instagramPost) {
+      recordInstagramPost(source.instagramPost, source.instagramAccount, id, now);
+    }
   });
   return getEvent(id)!;
 }

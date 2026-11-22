@@ -6,6 +6,7 @@ import { config } from "./config.ts";
 import { HttpError } from "./errors.ts";
 import { eventsRouter } from "./events/routes.ts";
 import { geocodeRouter } from "./geocode-route.ts";
+import { instagramRouter } from "./instagram-route.ts";
 import { settingsRouter } from "./settings-route.ts";
 import { walkwaysRouter } from "./walkways.ts";
 
@@ -38,6 +39,8 @@ export function createApp() {
         "GET    /api/walkways?south=&west=&north=&east=",
         "GET    /api/geocode?q=address",
         "GET    /api/geocode/suggest?q=partial address or McGill building",
+        "GET    /api/instagram/accounts",
+        "GET    /api/instagram/accounts/:username   (URLs of its posts already uploaded)",
         "GET    /api/settings",
         "PUT    /api/settings   (admin: X-Admin-Key header)",
         "GET    /api/health",
@@ -53,6 +56,7 @@ export function createApp() {
   app.use("/api/walkways", walkwaysRouter);
   app.use("/api/geocode", geocodeRouter);
   app.use("/api/settings", settingsRouter);
+  app.use("/api/instagram", instagramRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Not found" });
