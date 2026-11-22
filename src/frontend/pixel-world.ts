@@ -399,6 +399,14 @@ const PIXEL_ROOF_COLOURS: Record<string, string>[] = [
   { "0eaf9b": "b33831", "165a4c": "45293f", "92a984": "cd683d", "0b8a8f": "9e4539", "547e64": "7a3045", "30e1b9": "e6904e", "0b5e65": "6e2727", "239063": "7a3045", "374e4a": "6e2727", "8ff8e2": "fbb954" },
 ];
 
+/**
+ * Buildings whose roof colour is fixed instead of picked from their id: an index into
+ * PIXEL_ROOF_COLOURS (0 green copper, 1 grey slate, 2 red clay).
+ */
+const PIXEL_ROOF_BY_BUILDING: Record<string, number> = {
+  "Arts Building": 0,
+};
+
 /** The roof sheet with one of PIXEL_ROOF_COLOURS applied. */
 function recolourRoof(roof: ImageData, swaps: Record<string, string>): ImageData {
   const out = new ImageData(new Uint8ClampedArray(roof.data), roof.width, roof.height);
@@ -1299,7 +1307,7 @@ class PixelWorld {
     const variant = this.variants[b.look];
     const pixels = variant
       ? stretchBuilding(this.buildingSheet!, variant, b.w, b.h, pixelHash(b.id))
-      : roofAndWall(this.roofSheets[pixelHash(b.id) % this.roofSheets.length]!, this.wallSheet!, b.w, b.h, pixelHash(b.id + 7));
+      : roofAndWall(this.roofSheets[PIXEL_ROOF_BY_BUILDING[b.name ?? ""] ?? pixelHash(b.id) % this.roofSheets.length]!, this.wallSheet!, b.w, b.h, pixelHash(b.id + 7));
     const [canvas, ctx] = pixelCanvas(pixels.width, pixels.height);
     ctx.putImageData(pixels, 0, 0);
     const topper = b.name ? this.toppers.get(b.name) : undefined;
