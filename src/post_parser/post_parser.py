@@ -247,7 +247,7 @@ class PostParser:
             or response.nouls["offers_raffle"].noul >= min_score
         )
 
-    def evaluate_post(self, post_info: dict) -> str:
+    def evaluate_post(self, post_info: dict, max_children:int = 3) -> str:
         """
         Evaluates a post and returns the JSON with its contents.
             Arguments:
@@ -257,11 +257,16 @@ class PostParser:
         """
         # Loop through all the different media in the post.
         image_text = []
-        for child in post_info["children"]:
-            if child["media_type"] != "VIDEO":
-                # Assemble necessary context.
-                image = self.__parse_image(post_info["media_url"])
-                image_text.append(image)
+        if post_info["media_type"] != "CAROUSEL_ALBUM":
+            # Assemble necessary context.
+            image = self.__parse_image(post_info["thumbnail_url"])
+            image_text.append(image)
+        else:
+            for child in post_info["children"][:max_children]:
+                if child["media_type"] != "VIDEO":
+                    # Assemble necessary context.
+                    image = self.__parse_image(post_info["media_url"])
+                    image_text.append(image)
         # Gather parsing content. 
         parsing_content = {
             "timestamp": post_info["timestamp"],
