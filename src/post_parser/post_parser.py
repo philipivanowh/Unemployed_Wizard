@@ -1,10 +1,12 @@
+import io
+import json
 import os
+import time
 
 import cv2
 import numpy as np
 import requests
 from openai import OpenAI
-from paddleocr import PaddleOCR
 from typesafe_sdk import Noul, TypeSafeClient
 
 
@@ -38,18 +40,18 @@ class PostParser:
             
             SCHEMA:
             {
-            "is_deal": True,
-            "title": string,
+            "is_deal": "true",
+            "title": "string",
             "description":,
-            "date": string|null,
-            "start_time": sting|null,
-            "end_time": string|null,
+            "date": "string|null",
+            "start_time": "string|null",
+            "end_time": "string|null",
             "offer_type": "free_item|discount|raffle|other",
             "offer_category": "food|service|clothing|merch|event|other",
-            "location": string|null,
-            "address_line_1": string|null,
-            "address_line_2": string|null,
-            "conditions": string|null,
+            "location": "string|null",
+            "address_line_1": "string|null",
+            "address_line_2": "string|null",
+            "conditions": "string|null",
             }
             """
 
@@ -62,38 +64,136 @@ class PostParser:
             base_url="https://api.moonshot.ai/v1",
         )
 
-        # Initialize the PaddleOCR instance.
-        self.ocr = PaddleOCR(
-            use_doc_orientation_classify=False,  # Disables document orientation classification model via this parameter
-            use_doc_unwarping=False,  # Disables text image rectification model via this parameter
-            use_textline_orientation=False,  # Disables text line orientation classification model via this parameter
-            device="cpu",
-            enable_mkldnn=False,
-        )
+        # PaddleOCR API parameters:
+        self.PADDLE_JOB_URL = "https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
+        self.PADDLE_HEADERS = {
+            "Authorization": f"bearer {os.environ['PADDLEOCR_API_KEY']}"
+        }
 
-    def __parse_image(self, url: str, min_score: float = 0.5) -> str:
+        self.PADDLE_DATA = {
+            "model": "PP-OCRv6",
+            "optionalPayload": json.dumps({
+                "useDocOrientationClassify": False,
+                "useDocUnwarping": False,
+                "useTextlineOrientation": False,
+            })
+        }
+
+        self.requests_session = requests.Session()
+
+    def __parse_image(self, url: str, min_score: float = 0.5, max_attempts:int=5) -> str:
         """Gets the text on an image from its URL using PaddleOCR."""
         # Check if url is empty:
         if not url:
             print("No image in post")
             return None
 
+
+
         # Fetch image from URL.
-        resp = requests.get(url=url, timeout=15)
+        resp = self.requests_session.get(url=url, timeout=15)
         resp.raise_for_status()
 
         # Convert image.
         buffer = np.frombuffer(resp.content, dtype=np.uint8)
         image = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
 
-        # Loop over all lines of text in the image
-        lines = []
-        for res in self.ocr.predict(image):
-            for text, score in zip(res["rec_texts"], res["rec_scores"]):
-                if score >= min_score:  # Exclude lines with low certainty score.
-                    lines.append(text)
+        # Convert image to PaddleOCR's expected format.
+        success, encoded_image = cv2.imencode(".jpg", image)
 
-        return " ".join(lines)
+        if not success:
+            raise ValueError("Could not encode image to .jpg")
+
+ 
+
+        # Post job up to max_attempts times.
+        for attempts in range(max_attempts):
+            files = {
+                "file": (
+                    "image.jpg",
+                    io.BytesIO(encoded_image.tobytes()),
+                    "image/jpeg"
+                )
+            }
+            job_response = self.requests_session.post(
+                self.PADDLE_JOB_URL,
+                headers=self.PADDLE_HEADERS,
+                data=self.PADDLE_DATA,
+                files=files,
+                timeout=120
+            )
+
+            # Exit loop if job is successfully posted.
+            if job_response.status_code == 200:
+                break
+
+            # Check if the error is due to API server traffic.
+            error_code = job_response.json().get("code")
+            if error_code == 10010:
+                time.sleep(60)  # Traffic too high; wait 60 seconds before retrying.
+            else:
+                raise Exception(f"Unhandled error: {job_response.text}")    # Unexpected error.
+        else: 
+            raise Exception("PaddleOCR too busy. Max calls reached.")
+
+
+
+        # Once job is submitted, get id.
+        job_id = job_response.json()["data"]["jobId"]
+        print("Job submitted successfully; Starting polling.")
+
+
+
+        # Poll job until done.
+        jsonl_url = ""
+        while True:
+            # Poll
+            job_result_response = self.requests_session.get(
+                f"{self.PADDLE_JOB_URL}/{job_id}",
+                headers=self.PADDLE_HEADERS,
+                timeout=30
+            )
+            job_result_response.raise_for_status()
+
+            # Get results from poll,
+            result_data = job_result_response.json()["data"]
+            state = result_data["state"]
+
+
+            # Interpred poll results
+            if state == "done":
+                jsonl_url = result_data["resultUrl"]["jsonUrl"]
+                break
+
+            elif state == "failed":
+                error_msg = result_data.get("errorMsg")
+                raise Exception(f"Job failed; reason: {error_msg}")
+
+            # Job not complete; wait before polling again.            
+            time.sleep(5)
+
+        # Download results.
+        extracted_text = []
+        if jsonl_url:
+
+            # Get response
+            jsonl_response = self.requests_session.get(jsonl_url)
+            jsonl_response.raise_for_status()
+
+            lines = jsonl_response.text.strip().split('\n')
+            extracted_text = []
+            for line in lines:
+                # Verify that line is not empty.
+                if not line.strip():
+                    continue
+
+                result = json.loads(line)["result"]
+
+                for res in result["ocrResults"]:
+                    texts = res.get("prunedResult", {}).get("rec_texts", [])
+                    extracted_text.extend(texts)
+
+        return ' '.join(extracted_text)
 
     def __parse_text(self, content: str) -> str:
         """Parses post information to produce JSON with the relevant information."""
@@ -138,9 +238,11 @@ class PostParser:
             "caption": post_info["caption"],
         }
 
+        content = json.dumps(parsing_content, ensure_ascii=False)
+
         # Use Jev to see if there are any goodies.
-        if self.__evaluate_content(str(parsing_content)):
-            description = self.__parse_text(str(parsing_content))
+        if self.__evaluate_content(str(content)):
+            description = self.__parse_text(str(content))
         else:
             description = """
             {

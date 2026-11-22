@@ -1,3 +1,22 @@
-To run you must locally install paddle_static. See
+Before running, be sure to set your API keys as environment variables:
+MOONSHOT_API_KEY
+TYPESAFE_API_KEY
+PADDLEOCR_API_KEY
 
-Before running, be sure to export your Moonshot and TypeSafe API keys.
+To run, instantiate PostParser and call PostParser.evaluate_post. This function takes a dict/json object with the following fields: 'timestamp', 'thumbnail_url', and 'caption'. These are all natively included in the output of scrapper.py.
+
+PostParser.evaluate_post will return a json string of the form:
+          {
+            "is_deal": "bool",
+            "title": "string",
+            "description":,
+            "date": "string|null",
+            "start_time": "string|null",
+            "end_time": "string|null",
+            "offer_type": "free_item|discount|raffle|other",
+            "offer_category": "food|service|clothing|merch|event|other",
+            "location": "string|null",
+            "address_line_1": "string|null",
+            "address_line_2": "string|null",
+            "conditions": "string|null",
+          }
