@@ -135,6 +135,24 @@ interface PixelStreetLabel {
   spots: { x: number; y: number; vertical: boolean }[];
 }
 
+/**
+ * Extra art drawn on top of a named building's roof (centred, sitting on the roof's middle),
+ * e.g. the Arts Building's cupola. scale is a whole number, so pixels stay square. Add a line
+ * to give another building a topper.
+ */
+const PIXEL_ROOF_TOPPERS: { building: string; image: string; scale: number }[] = [
+  { building: "Arts Building", image: "/tiles/arts-cupola.png", scale: 3 },
+];
+
+/** Where a topper goes on a building sprite: left, top and size in art pixels. */
+function topperRect(b: { w: number; h: number }, img: { width: number; height: number }, scale: number) {
+  const w = img.width * scale;
+  const h = img.height * scale;
+  // Base a little below the middle of the roof (the front wall is the bottom 32 px).
+  const base = Math.round((b.h - 32) / 2) + 6 * scale;
+  return { x: Math.round((b.w - w) / 2), y: Math.max(0, base - h), w, h };
+}
+
 /** Label zooms: streets from LABEL_STREET_ZOOM, building names from LABEL_BUILDING_ZOOM. */
 const LABEL_STREET_ZOOM = 17;
 const LABEL_BUILDING_ZOOM = 18;
@@ -511,6 +529,8 @@ class PixelWorld {
   private chunkProps = new Map<number, PixelProp[]>();
   private propImage: HTMLImageElement | null = null;
   private propRects: Record<string, { x: number; y: number; w: number; h: number }> = {};
+  /** Roof topper images and scales by building name (PIXEL_ROOF_TOPPERS). */
+  private toppers = new Map<string, { img: HTMLImageElement; scale: number }>();
   private streetLabels: PixelStreetLabel[] = [];
   /** Named road segments on the art grid, for hover names. */
   private roadSegments: { name: string; ax: number; ay: number; bx: number; by: number }[] = [];
@@ -592,6 +612,16 @@ class PixelWorld {
       json<PixelMapEdits>("/map-edits.json").catch(() => null),
       pixelLoadImage("/tiles/fence.png").catch(() => null),
     ]);
+    // Roof toppers are decoration: one that doesn't load is just left off.
+    for (const t of PIXEL_ROOF_TOPPERS) {
+      void pixelLoadImage(t.image).then((img) => {
+        this.toppers.set(t.building, { img, scale: t.scale });
+        for (const b of this.buildings) if (b.name === t.building) b.sprite = null;
+        this.chunks.clear();
+        this.cacheBytes = 0;
+        this.queueDraw();
+      }, () => undefined);
+    }
     if (edits) this.edits = edits;
     this.fenceImage = fenceImg;
     this.propImage = propImg;
@@ -887,8 +917,11 @@ class PixelWorld {
     if (zoom < LABEL_BUILDING_ZOOM) return;
     for (const b of this.buildings) {
       if (!b.name) continue;
-      // On the roof, a third of the way down (the front wall is at the bottom).
-      put(this.label(b.name, "#fbff86", false), rsx + (b.x + b.w / 2) * s, rsy + (b.y + b.h * 0.35) * s);
+      // On the roof, a third of the way down (the front wall is at the bottom); above a roof
+      // topper, so the cupola or tower stays visible.
+      const topper = this.toppers.get(b.name);
+      const at = topper ? b.y + Math.max(8, topperRect(b, topper.img, topper.scale).y - 10) : b.y + b.h * 0.35;
+      put(this.label(b.name, "#fbff86", false), rsx + (b.x + b.w / 2) * s, rsy + at * s);
     }
   }
 
@@ -1211,6 +1244,12 @@ class PixelWorld {
       : roofAndWall(this.roofSheets[pixelHash(b.id) % this.roofSheets.length]!, this.wallSheet!, b.w, b.h, pixelHash(b.id + 7));
     const [canvas, ctx] = pixelCanvas(pixels.width, pixels.height);
     ctx.putImageData(pixels, 0, 0);
+    const topper = b.name ? this.toppers.get(b.name) : undefined;
+    if (topper) {
+      const r = topperRect(b, topper.img, topper.scale);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(topper.img, r.x, r.y, r.w, r.h);
+    }
     b.sprite = canvas;
     return canvas;
   }
