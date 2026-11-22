@@ -128,8 +128,8 @@ RECENT_POSTS_FILE = Path(__file__).resolve().parent.parent / "data" / "recent_po
 
 # Limits on finding new accounts. Each candidate costs one Graph API call, and looking up many
 # accounts you don't follow is what looks most like scraping, so this grows the list slowly.
-MAX_API_CALLS = 15  # per run; --max-calls can only lower it
-MAX_NEW_ACCOUNTS_PER_RUN = 5  # stop once this many have been added
+MAX_API_CALLS = 5  # per run; --max-calls can only lower it
+MAX_NEW_ACCOUNTS_PER_RUN = 2  # stop once this many have been added
 MIN_HOURS_BETWEEN_RUNS = 24  # a second run sooner exits without calling anything
 MAX_WATCHED_ACCOUNTS = 50  # never add past this many found accounts: it bounds every discovery pass
 
