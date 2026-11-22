@@ -1,24 +1,43 @@
-import { db } from "./db.ts";
+import { db, transaction } from "./db.ts";
 
 // Instagram posts that have been parsed and uploaded as events, by account. The scraper
 // asks for an account's list (GET /api/instagram/accounts/:username) and skips those posts.
-// Creating an event with `instagramAccount` and `instagramPostUrl` adds the post to the list.
+// Creating an event with `instagramAccount` and `instagramPostUrl` adds the post to the list,
+// and deleting the event (DELETE /api/events/:id) removes it again (ON DELETE CASCADE), so the
+// scraper may pick the post up again on its next pass.
 //
 // Posts are keyed by their shortcode (the "C1abcDEF" in instagram.com/p/C1abcDEF/), which is
 // the same whether a link says /p/, /reel/ or /tv/, so a post can't be uploaded twice.
-// Deleting an event keeps its post on the list (event_id becomes null): it was still
-// handled, and the scraper shouldn't bring back an event a moderator removed.
 
-db.exec(`
+const SCHEMA = `
   CREATE TABLE IF NOT EXISTS instagram_posts (
     shortcode  TEXT PRIMARY KEY,                          -- case-sensitive
     url        TEXT NOT NULL,                             -- canonical permalink
     username   TEXT NOT NULL,                             -- lowercase, without "@"
-    event_id   TEXT REFERENCES events (id) ON DELETE SET NULL,
+    event_id   TEXT NOT NULL REFERENCES events (id) ON DELETE CASCADE,
     created_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_instagram_posts_username ON instagram_posts (username, created_at);
+`;
 
+// Databases made before deleting an event removed its post: the table kept those posts with
+// event_id = NULL. SQLite can't change a foreign key in place, so rebuild the table without them.
+const existing = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'instagram_posts'").get() as
+  | { sql: string }
+  | undefined;
+if (existing && !existing.sql.includes("ON DELETE CASCADE")) {
+  transaction(() => {
+    db.exec("ALTER TABLE instagram_posts RENAME TO instagram_posts_old");
+    db.exec("DROP INDEX IF EXISTS idx_instagram_posts_username");
+    db.exec(SCHEMA);
+    db.exec(`INSERT INTO instagram_posts (shortcode, url, username, event_id, created_at)
+             SELECT shortcode, url, username, event_id, created_at FROM instagram_posts_old WHERE event_id IS NOT NULL`);
+    db.exec("DROP TABLE instagram_posts_old");
+  });
+}
+
+db.exec(`
+  ${SCHEMA}
   -- Replaced by instagram_posts: it only held each account's latest post timestamp.
   DROP TABLE IF EXISTS instagram_accounts;
 `);
@@ -31,8 +50,8 @@ export interface InstagramPost {
 
 export interface UploadedInstagramPost extends InstagramPost {
   username: string;
-  /** The event made from it; null if that event was deleted since. */
-  eventId: string | null;
+  /** The event made from it. */
+  eventId: string;
   createdAt: string;
 }
 
@@ -40,7 +59,7 @@ interface PostRow {
   shortcode: string;
   url: string;
   username: string;
-  event_id: string | null;
+  event_id: string;
   created_at: string;
 }
 
