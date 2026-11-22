@@ -1,8 +1,10 @@
 """Event discovery loop.
 
-Every DISCOVERY_INTERVAL seconds: for each watched Instagram account, fetch its recent posts,
-skip the ones already handled, run the new ones through the parser (OCR + LLMs) and push the
-resulting events to the TypeScript backend.
+Runs until stopped (Ctrl+C). Each pass: for each watched Instagram account, fetch its recent
+posts, skip the ones already handled, run the new ones through the parser (OCR + LLMs) and push
+the resulting events to the TypeScript backend. Passes repeat as often as the Graph API limits
+allow (see pass_interval); a pass that fails is retried a few minutes later, and a cooldown is
+waited out. Nothing short of Ctrl+C or missing API keys ends the loop.
 
 Which posts count as "already handled":
   - posts that became events: the backend keeps that list itself (ingest.py asks for it)
@@ -12,7 +14,7 @@ Which posts count as "already handled":
     python src/discovery.py            # run forever (Ctrl+C to stop)
     python src/discovery.py --once     # one pass, then exit (handy for testing / cron)
 
-Settings (WATCHLIST, DISCOVERY_INTERVAL, ...) are in config.py. Besides config.WATCHLIST it checks
+Settings (WATCHLIST, DISCOVERY_MIN_INTERVAL, ...) are in config.py. Besides config.WATCHLIST it checks
 the accounts build_watchlist.py saved in config.WATCHLIST_FILE.
 Needs the TS backend running and the parser's API keys set (see config.REQUIRED_API_KEYS).
 """
@@ -23,12 +25,13 @@ import random
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 import config
 import watchlist
 from ingest import (TransientError, check_edit_access, get_parser, is_recent, post_age_days,
                     process_post, shortcode_of, uploaded_shortcodes)
+from instagram_scrapper import scrapper, throttle
 from instagram_scrapper.scrapper import InstagramError, fetch_posts
 
 log = logging.getLogger("discovery")
@@ -51,8 +54,10 @@ def collect_posts(accounts, seen):
     """Scrape the accounts and return [(account, post)] still worth parsing: recent, not judged
     before, and not already an event. Calls are spaced out by the shared Graph API limits
     (instagram_scrapper/throttle.py). If Instagram or those limits say stop, the accounts not
-    reached yet wait for the next pass. Raises TransientError if the backend can't be asked."""
+    reached yet wait for the next pass. Returns (jobs, accounts scraped).
+    Raises TransientError if the backend can't be asked."""
     jobs, fetched = [], {}
+    scraped = 0
     try:
         for done_count, username in enumerate(accounts):
             try:
@@ -67,10 +72,11 @@ def collect_posts(accounts, seen):
             account = result["username"] or username.strip().lstrip("@").lower()  # one spelling, used for the backend
             jobs += [(account, p) for p in _worth_parsing(account, result["posts"], seen)]
             fetched[account.lower()] = result["posts"]
+            scraped += 1
     finally:
         watchlist.remember_posts(fetched)  # build_watchlist.py reuses these instead of calling again
     # Newest first: the likeliest to be about events that haven't happened yet.
-    return sorted(jobs, key=lambda job: post_age_days(job[1]))
+    return sorted(jobs, key=lambda job: post_age_days(job[1])), scraped
 
 
 def _worth_parsing(account, posts, seen):
@@ -83,7 +89,7 @@ def _worth_parsing(account, posts, seen):
 
 
 def discover_once():
-    """One pass over the watchlist. Returns how many events were created."""
+    """One pass over the watchlist. Returns {"accounts", "scraped", "created"}."""
     seen = load_seen()
     accounts = watchlist.active_usernames()  # reread every pass: build_watchlist.py may have added some
     # Shuffled, so that when the Graph API limits cut a pass short it isn't always the same
@@ -91,16 +97,17 @@ def discover_once():
     random.shuffle(accounts)
     log.info("discovery pass started (%d accounts)", len(accounts))
     started = time.time()
+    result = {"accounts": len(accounts), "scraped": 0, "created": 0}
     try:
         check_edit_access()  # before any paid call: would the backend accept the events?
-        jobs = collect_posts(accounts, seen)
+        jobs, result["scraped"] = collect_posts(accounts, seen)
     except InstagramError as e:
         log.error("Instagram refused every request (HTTP %s, code %s): %s. Skipping this pass; if it's the "
                   "token, set a new one in IG_ACCESS_TOKEN.", e.status, e.code, e.message.rstrip("."))
-        return 0
+        return result
     except TransientError as e:  # backend down or editing off: nothing was spent
         log.warning("can't ingest right now: %s", e)
-        return 0
+        return result
     log.info("scraped in %.0fs; parsing %d post(s), %d at a time", time.time() - started, len(jobs), config.PARSER_WORKERS)
 
     # After one temporary failure (OCR service busy, backend down) don't start more slow, paid
@@ -118,30 +125,80 @@ def discover_once():
     counts = {"created": 0, "skipped": 0, "retry": 0, "deferred": 0}
     with ThreadPoolExecutor(max_workers=config.PARSER_WORKERS) as pool:
         futures = {pool.submit(work, job): job for job in jobs}
-        for future in as_completed(futures):
-            account, post = futures[future]
-            outcome, info = future.result()
-            counts[outcome] += 1
-            if outcome == "created":
-                log.info("%s: created event %s from %s", account, info["event"].get("id"), post["permalink"])
-            elif outcome == "skipped":
-                # Can never become an event: remember it so it's never paid for again.
-                seen.add(info["post_id"])
-                save_seen(seen)
-                log.info("%s: skipped %s: %s", account, post["permalink"], info["reason"])
-            elif outcome == "retry":
-                log.warning("%s: will retry %s: %s", account, post["permalink"], info["reason"])
+        pending = set(futures)
+        try:
+            while pending:
+                # Short waits: on Windows, Ctrl+C can't interrupt a long one.
+                done, pending = wait(pending, timeout=0.5, return_when=FIRST_COMPLETED)
+                for future in done:
+                    _report(future, futures[future], counts, seen)
+        except KeyboardInterrupt:
+            # Don't start anything new. Posts already being parsed are finished (their paid calls
+            # are under way); unfinished ones aren't remembered, so the next run picks them up.
+            stop.set()
+            for future in futures:
+                future.cancel()
+            running = sum(not f.done() for f in futures)
+            if running:
+                log.warning("stopping: finishing %d post(s) already being parsed (Ctrl+C again to quit now)", running)
+            raise
 
     log.info("discovery pass done in %.0fs: %d created, %d skipped, %d to retry, %d left for the next pass",
              time.time() - started, counts["created"], counts["skipped"], counts["retry"], counts["deferred"])
-    return counts["created"]
+    result["created"] = counts["created"]
+    return result
+
+
+def _report(future, job, counts, seen):
+    """Log one parsed post, and remember it if it can never become an event."""
+    if future.cancelled():
+        return
+    account, post = job
+    outcome, info = future.result()
+    counts[outcome] += 1
+    if outcome == "created":
+        log.info("%s: created event %s from %s", account, info["event"].get("id"), post["permalink"])
+    elif outcome == "skipped":
+        # Can never become an event: remember it so it's never paid for again.
+        seen.add(info["post_id"])
+        save_seen(seen)
+        log.info("%s: skipped %s: %s", account, post["permalink"], info["reason"])
+    elif outcome == "retry":
+        log.warning("%s: will retry %s: %s", account, post["permalink"], info["reason"])
+
+
+def pass_interval(accounts):
+    """Seconds from the start of one pass to the next: as often as our share of the daily Graph
+    API calls allows (one call per account), but never more often than DISCOVERY_MIN_INTERVAL."""
+    calls_per_day = config.GRAPH_MAX_CALLS_PER_DAY * config.DISCOVERY_SHARE_OF_DAILY_CALLS
+    return max(config.DISCOVERY_MIN_INTERVAL, accounts * 86400 / max(calls_per_day, 1))
+
+
+def _until(seconds):
+    return f"{time.strftime('%H:%M', time.localtime(time.time() + seconds))} (in {seconds / 60:.0f} min)"
 
 
 def run_forever():
+    """Pass after pass until Ctrl+C. A crash in one pass is logged and the loop carries on."""
     while True:
         started = time.time()
-        discover_once()
-        time.sleep(max(0, config.DISCOVERY_INTERVAL - (time.time() - started)))
+        try:
+            result = discover_once()
+        except Exception:
+            log.exception("the discovery pass crashed")
+            result = None
+
+        if result and result["scraped"]:
+            wait = pass_interval(result["accounts"]) - (time.time() - started)
+        else:  # nothing scraped: backend down, Graph API paused, or a crash
+            wait = config.DISCOVERY_RETRY_SECONDS
+            paused, why = throttle.wait_needed(scrapper.ACCESS_TOKEN)
+            if paused > wait and why != "spacing between calls":
+                wait = paused + 5
+                log.info("Graph API paused (%s)", why)
+        wait = max(wait, 0)
+        log.info("next pass at %s", _until(wait))
+        time.sleep(wait)
 
 
 if __name__ == "__main__":
@@ -156,6 +213,8 @@ if __name__ == "__main__":
         get_parser()  # fail fast if the API keys aren't set, rather than on the first post
     except RuntimeError as e:
         sys.exit(f"error: {e}")
+    if not scrapper.ACCESS_TOKEN:
+        sys.exit("error: set the IG_ACCESS_TOKEN environment variable")
 
     try:
         discover_once() if args.once else run_forever()

@@ -15,11 +15,17 @@ WATCHLIST = [
    "isamcgillu",
      "wherethefoodat.tracker",
      "mcgillcsus",
-     "mcgillfoodcoalition",  # McGill Food Coalition (only 1 post as of 2026-11; check it's their main account)
+     "mcgill.foodcoalition",  # McGill Food Coalition (only 1 post as of 2026-11; check it's their main account)
 ]
 
-# How often the loop checks every account, in seconds.
-DISCOVERY_INTERVAL = 6 * 60 * 60  # every 6 hours
+# The loop runs until stopped (Ctrl+C), starting a new pass as often as the Graph API limits
+# below allow: one call per account, so with 55 accounts and 80% of the 400 calls a day, a pass
+# about every 4 hours. Never more often than DISCOVERY_MIN_INTERVAL.
+DISCOVERY_MIN_INTERVAL = 30 * 60
+DISCOVERY_SHARE_OF_DAILY_CALLS = 0.8  # the rest is left for build_watchlist.py and testing.py
+# When a pass couldn't scrape anything (backend down, crash), try again this soon. During a
+# Graph API cooldown it waits for the cooldown instead.
+DISCOVERY_RETRY_SECONDS = 5 * 60
 
 # How many of an account's most recent posts to look at on each check. Fetching more is free
 # (still one API call); only new, recent posts are parsed.
