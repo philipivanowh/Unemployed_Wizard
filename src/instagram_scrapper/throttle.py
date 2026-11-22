@@ -131,6 +131,11 @@ def before_call(token, max_wait=None):
         time.sleep(wait + 0.05)
 
 
+def wait_needed(token):
+    """(seconds until the next call is allowed, why). Read-only: records nothing."""
+    return _wait_needed(_load(), token)
+
+
 def usage_percent(headers):
     """The highest percentage in Meta's usage headers (app, business-use-case, ad-account)."""
     best = 0.0
