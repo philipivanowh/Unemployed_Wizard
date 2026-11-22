@@ -11,7 +11,14 @@ from typesafe_sdk import Noul, TypeSafeClient
 
 
 class PostParser:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        jev_model: str = "jev-latest",
+        kimi_model: str = "kimi-k3",
+        kimi_reasoning_effort: str = "high",
+        paddel_model: str = "PP-OCRv6",
+    ) -> None:
+
         # Descritption of the Jev task
         self.JEV_TICKET = """We are trying to identify whether this post contains an advertisement
             for free or discounted items/events, or raffles and giveaways. We have pulled together
@@ -28,16 +35,20 @@ class PostParser:
                 instructions="Do the caption or image offer any free items as a result of a competion or raffle?"
             ),
         }
+        self.KIMI_MODEL = kimi_model
+        self.KIMI_REASONING_EFFORT = kimi_reasoning_effort
         # Context for Kimi K3
         self.KIMI_SYSTEM = """You are tasked with getting information from web posts. Each post
             contains information about a deal or an offer that a business or organization
             is giving. Your task is to extract relevant information and output it as a JSON
             object matching the schema. You may guess, if information is missing or unclear,
-            try to fill out at least the fields title, date, start_time and end_time with relevant information. 
-            If information is genuienly missing and cannot be infered, leave the values as null. If the date is not explicit, you may calculate it using 
-            the date of the post or leave it as null. Provide a title and a short description.
-            list any conditions(eg. student-id, 30 first clients). Make sure to mark every object
-            as a deal. Make sure to always use military time (23:21 instead of 11:21 PM for example).
+            try to fill out at least the fields title, date, start_time and end_time with relevant 
+            information. If information is genuienly missing and cannot be infered, leave the values 
+            as null. If the date is not explicit, you may calculate it using the date of the post or 
+            leave it as null. Provide a title and a short description. Please list any conditions that 
+            apply to the deals(eg. student-id, 30 first clients). Make sure to mark every object as a 
+            deal since we already know that every post contains a promotion of some sort. Please write 
+            dates in "YYYY-MM-DD" format and time in "24:00" format.
             
             SCHEMA:
             {
@@ -58,7 +69,7 @@ class PostParser:
 
         # Initialize the Jev and Kimi K3 clients.
         self.JevClient = TypeSafeClient(
-            model="jev-latest"
+            model=jev_model
         )  # Requires API key in TYPESAFE_API_KEY
         self.MoonshotClient = OpenAI(
             api_key=os.environ["MOONSHOT_API_KEY"],
@@ -72,61 +83,59 @@ class PostParser:
         }
 
         self.PADDLE_DATA = {
-            "model": "PP-OCRv6",
-            "optionalPayload": json.dumps({
-                "useDocOrientationClassify": False,
-                "useDocUnwarping": False,
-                "useTextlineOrientation": False,
-            })
+            "model": paddel_model,
+            "optionalPayload": json.dumps(
+                {
+                    "useDocOrientationClassify": False,
+                    "useDocUnwarping": False,
+                    "useTextlineOrientation": False,
+                }
+            ),
         }
 
         self.requests_session = requests.Session()
 
-    def __parse_image(self, url: str, min_score: float = 0.5, max_attempts:int=5) -> str:
+    def __parse_image(
+        self,
+        url: str,
+        max_attempts: int = 5,
+        timeout: float = 120,
+        polling_time: float = 5,
+    ) -> str:
         """Gets the text on an image from its URL using PaddleOCR."""
         # Check if url is empty:
         if not url:
             print("No image in post")
             return None
 
-
+        print("Parsing image")
 
         # Fetch image from URL.
         resp = self.requests_session.get(url=url, timeout=15)
         resp.raise_for_status()
 
         # Convert image.
-        print("starting image conversion")
         buffer = np.frombuffer(resp.content, dtype=np.uint8)
         image = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
 
         # Convert image to PaddleOCR's expected format.
         success, encoded_image = cv2.imencode(".jpg", image)
-        print("finishing image conversion")
 
         if not success:
             raise ValueError("Could not encode image to .jpg")
 
- 
-
         # Post job up to max_attempts times.
-        i = 0
+        print("Posting PaddleOCR job")
         for attempts in range(max_attempts):
-            i += 1
-            print(f"attempt n {i} to parse image")
             files = {
-                "file": (
-                    "image.jpg",
-                    io.BytesIO(encoded_image.tobytes()),
-                    "image/jpeg"
-                )
+                "file": ("image.jpg", io.BytesIO(encoded_image.tobytes()), "image/jpeg")
             }
             job_response = self.requests_session.post(
                 self.PADDLE_JOB_URL,
                 headers=self.PADDLE_HEADERS,
                 data=self.PADDLE_DATA,
                 files=files,
-                timeout=120
+                timeout=120,
             )
 
             # Exit loop if job is successfully posted.
@@ -136,35 +145,36 @@ class PostParser:
             # Check if the error is due to API server traffic.
             error_code = job_response.json().get("code")
             if error_code == 10010:
+                print(
+                    f"Job rejected: PaddleOCR is too busy.\nPolling again in {timeout} seconds.\n{max_attempts - attempts - 1} attemtps remaining."
+                )
                 time.sleep(60)  # Traffic too high; wait 60 seconds before retrying.
             else:
-                raise Exception(f"Unhandled error: {job_response.text}")    # Unexpected error.
-        else: 
-            raise Exception("PaddleOCR too busy. Max calls reached.")
-
-
+                raise RuntimeError(
+                    f"Unhandled error: {job_response.text}"
+                )  # Unexpected error.
+        else:
+            raise TimeoutError("PaddleOCR too busy. Max calls reached.")
 
         # Once job is submitted, get id.
         job_id = job_response.json()["data"]["jobId"]
         print("Job submitted successfully; Starting polling.")
 
-
-
         # Poll job until done.
+        deadline = time.monotonic() + timeout
         jsonl_url = ""
-        while True:
+        while time.monotonic() < deadline:
             # Poll
             job_result_response = self.requests_session.get(
                 f"{self.PADDLE_JOB_URL}/{job_id}",
                 headers=self.PADDLE_HEADERS,
-                timeout=30
+                timeout=30,
             )
             job_result_response.raise_for_status()
 
             # Get results from poll,
             result_data = job_result_response.json()["data"]
             state = result_data["state"]
-
 
             # Interpred poll results
             if state == "done":
@@ -173,20 +183,20 @@ class PostParser:
 
             elif state == "failed":
                 error_msg = result_data.get("errorMsg")
-                raise Exception(f"Job failed; reason: {error_msg}")
-
-            # Job not complete; wait before polling again.            
-            time.sleep(5)
-
+                raise RuntimeError(f"Job failed; reason: {error_msg}")
+            # Job not complete; wait before polling again.
+            time.sleep(polling_time)
+        else:
+            raise TimeoutError(f"Polling not complete after {timeout}s.")
+        print("Job done, extracting results.")
         # Download results.
         extracted_text = []
         if jsonl_url:
-
             # Get response
             jsonl_response = self.requests_session.get(jsonl_url)
             jsonl_response.raise_for_status()
 
-            lines = jsonl_response.text.strip().split('\n')
+            lines = jsonl_response.text.strip().split("\n")
             extracted_text = []
             for line in lines:
                 # Verify that line is not empty.
@@ -199,28 +209,34 @@ class PostParser:
                     texts = res.get("prunedResult", {}).get("rec_texts", [])
                     extracted_text.extend(texts)
 
-        return ' '.join(extracted_text)
+        return " ".join(extracted_text)
 
-    def __parse_text(self, content: str) -> str:
+    def __parse_text(self, content: str, timeout: float = 120) -> str:
         """Parses post information to produce JSON with the relevant information."""
         # Get response from Kimi API.
+        print("Kimi AI is parsing the contents of the post.")
         parsed = self.MoonshotClient.chat.completions.create(
-            model="kimi-k3",
-            reasoning_effort="high",
+            model=self.KIMI_MODEL,
+            reasoning_effort=self.KMIMI_REASONING_EFFORT,
             messages=[
                 {"role": "system", "content": self.KIMI_SYSTEM},
                 {"role": "user", "content": content},
             ],
+            timeout=timeout,
         )
         return parsed.choices[0].message.content
 
-    def __evaluate_content(self, content: str, min_score: float = 0.7) -> bool:
+    def __evaluate_content(
+        self, content: str, min_score: float = 0.7, timeout: float = 120
+    ) -> bool:
         """Evalutes the contents of a post to determine if they contain free goodies."""
 
         # Get response from Jev API.
+        print("Jev is analyzing the contents of the post.")
         response = self.JevClient.system_one(
             state={"ticket": self.JEV_TICKET, "content": content},
             questions=self.QUESTIONS,
+            timeout=timeout,
         )
         return (  # Joining the answers to all Jev questions.
             response.nouls["offers_free"].noul >= min_score
