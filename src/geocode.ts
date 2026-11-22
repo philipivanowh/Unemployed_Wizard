@@ -1,4 +1,5 @@
 import { config } from "./config.ts";
+import { buildingAddressLine, findMcGillBuilding, rankMcGillBuildings } from "./mcgill-buildings.ts";
 
 // Address -> coordinates using Photon (https://photon.komoot.io), a free geocoder built on
 // OpenStreetMap data. It copes with loosely typed addresses and building names better than
@@ -9,6 +10,9 @@ import { config } from "./config.ts";
 //
 // OpenStreetMap stores Montreal streets under their French names ("Rue Sherbrooke Ouest"),
 // so English-style addresses ("845 Sherbrooke St W") are also searched in French form.
+//
+// McGill building names and nicknames ("Trottier", "SSMU") are recognised without the
+// geocoder, from the list in mcgill-buildings.ts.
 
 export interface Coordinates {
   latitude: number;
@@ -22,6 +26,24 @@ interface Candidate {
   latitude: number;
   longitude: number;
   houseNumber: string | null;
+  /** Place name, e.g. "Université McGill" (null for plain addresses). */
+  name: string | null;
+  /** "845 Rue Sherbrooke Ouest" */
+  street: string | null;
+  city: string | null;
+}
+
+/** One entry in the address field's suggestion list. */
+export interface Suggestion {
+  /** Main line, e.g. "Trottier Building" or "845 Rue Sherbrooke Ouest". */
+  label: string;
+  /** Second line, e.g. "3630 University St · McGill" or "Montréal". */
+  detail: string;
+  /** What to put in the address field when it's picked. */
+  address: string;
+  latitude: number;
+  longitude: number;
+  kind: "mcgill" | "place";
 }
 
 const MIN_INTERVAL_MS = 1000; // be gentle with the free public server
@@ -48,7 +70,13 @@ export function geocodingEnabled(): boolean {
  */
 export async function geocodeAddress(address: string): Promise<Coordinates | null> {
   const query = address.trim();
-  if (!geocodingEnabled() || !query) return null;
+  if (!query) return null;
+  // "Trottier", "SSMU", "Trottier Building, 3630 University St": a McGill building we know.
+  const building = findMcGillBuilding(query);
+  if (building) {
+    return { latitude: building.latitude, longitude: building.longitude, label: buildingAddressLine(building) };
+  }
+  if (!geocodingEnabled()) return null;
   try {
     const queries = [query];
     const french = frenchStreetVariant(query);
@@ -62,6 +90,66 @@ export async function geocodeAddress(address: string): Promise<Coordinates | nul
   } catch (err) {
     console.warn(`Geocoding failed for "${address}":`, err instanceof Error ? err.message : err);
     return null;
+  }
+}
+
+/**
+ * Suggestions while someone types an address: matching McGill buildings first (instant,
+ * from mcgill-buildings.ts), then places and addresses from the geocoder. The geocoder is
+ * skipped when the text has no digits and already names a McGill building, to keep requests
+ * to the free server down. `complete` is false if the geocoder couldn't be reached.
+ */
+export async function suggestAddresses(text: string, limit = 6): Promise<{ suggestions: Suggestion[]; complete: boolean }> {
+  const query = text.trim();
+  const ranked = rankMcGillBuildings(query).slice(0, 5);
+  const buildings = ranked.map((r) => r.building);
+  const suggestions: Suggestion[] = buildings.map((b) => ({
+    label: b.name,
+    detail: `${b.address} · McGill`,
+    address: buildingAddressLine(b),
+    latitude: b.latitude,
+    longitude: b.longitude,
+    kind: "mcgill",
+  }));
+
+  // "trottier" or "ssmu" clearly means a building; "sherbrooke" only brushes "Carrefour Sherbrooke".
+  const skipGeocoder = !/\d/.test(query) && (ranked[0]?.score ?? 0) >= 80;
+  if (!geocodingEnabled() || query.length < 3 || skipGeocoder) return { suggestions: suggestions.slice(0, limit), complete: true };
+
+  try {
+    const candidates = await photonSearch(frenchStreetVariant(query) ?? query);
+    const number = query.match(/^\s*(\d+[a-z]?)\b/i)?.[1]?.toLowerCase();
+    const words = streetWords(query);
+    const ranked = candidates
+      .map((c, i) => {
+        const labelWords = new Set(normalizeText(c.label).split(/[^a-z0-9]+/));
+        const exact = number !== undefined && c.houseNumber?.toLowerCase() === number && words.some((w) => labelWords.has(w));
+        return { c, i, exact };
+      })
+      .sort((a, b) => Number(b.exact) - Number(a.exact) || a.i - b.i)
+      .map(({ c }) => c);
+
+    const taken = new Set(suggestions.map((s) => normalizeText(s.label)));
+    for (const c of ranked) {
+      if (suggestions.length >= limit) break;
+      const main = c.name ?? c.street ?? c.label;
+      if (taken.has(normalizeText(main)) || taken.has(normalizeText(c.label))) continue;
+      taken.add(normalizeText(main));
+      taken.add(normalizeText(c.label));
+      const rest = [c.name ? c.street : null, c.city].filter((x): x is string => Boolean(x));
+      suggestions.push({
+        label: main,
+        detail: rest.join(", "),
+        address: [c.name, c.street, c.city].filter(Boolean).join(", "),
+        latitude: c.latitude,
+        longitude: c.longitude,
+        kind: "place",
+      });
+    }
+    return { suggestions, complete: true };
+  } catch (err) {
+    console.warn(`Address suggestions failed for "${query}":`, err instanceof Error ? err.message : err);
+    return { suggestions, complete: false };
   }
 }
 
@@ -193,12 +281,16 @@ function toCandidate(feature: PhotonFeature): Candidate | null {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
   const p = feature.properties ?? {};
   const street = [p.housenumber, p.street].filter(Boolean).join(" ");
-  const parts = [p.name, street, p.city ?? p.district].filter((x): x is string => Boolean(x));
+  const city = p.city ?? p.district ?? null;
+  const parts = [p.name, street, city].filter((x): x is string => Boolean(x));
   return {
     label: [...new Set(parts)].join(", ") || "Unnamed place",
     latitude: latitude!,
     longitude: longitude!,
     houseNumber: p.housenumber ?? null,
+    name: p.name ?? null,
+    street: street || null,
+    city,
   };
 }
 

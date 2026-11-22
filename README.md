@@ -104,6 +104,21 @@ free geocoder built on OpenStreetMap data, and works like this:
 Lookups run one at a time, at most one per second, and are cached. Call it when a field is finished, not on every
 keystroke.
 
+**Suggestions while typing.** The add-event page's address field shows a list of guesses under it as you type. You
+can use the arrow keys and Enter, or click one. Picking one fills in the address and drops the pin. The list comes
+from `GET /api/geocode/suggest?q=<text>`, which returns
+`{ suggestions: [{ label, detail, address, latitude, longitude, kind }], complete }`:
+
+- **McGill buildings first** (`kind: "mcgill"`), from the list in `src/mcgill-buildings.ts`. You can type the
+  building's name, the start of it, or a nickname, without the street address: `Trottier`, `trot`, `SSMU`,
+  `Shatner`, `Mac Eng`, `RVC`, `New Rez`, `gym`, `law`… Picking one fills in e.g.
+  `Trottier Building, 3630 University St`. These need no geocoder, so they show up instantly, and saving an event
+  with just a building name (`Trottier`) finds it too. To add a building or a nickname, add a line to
+  `MCGILL_BUILDINGS`. The coordinates there come from OpenStreetMap.
+- **Then addresses and places** (`kind: "place"`) from Photon, nearest McGill first. Photon isn't asked when the text
+  clearly names a McGill building and has no numbers, which keeps requests to the free server down. `complete` is
+  `false` if Photon couldn't be reached. The McGill matches are still returned then.
+
 ### Walkways
 
 `GET /api/walkways?south=&west=&north=&east=` returns the walkable paths and streets in a box (at most 0.08° a side)

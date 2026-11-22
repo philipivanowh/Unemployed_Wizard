@@ -674,7 +674,156 @@
   }
 
   addressInput.addEventListener("change", () => {
+    // Picking a suggestion also fires "change"; it has already placed the pin.
+    if (suggestionPicked) return;
     pendingLookup = lookUpAddress(addressInput.value.trim());
+  });
+
+  // -------------------------------------------------------------------------
+  // Address suggestions: a list under the field while typing. McGill buildings come
+  // first and can be found by name or nickname ("Trottier", "SSMU", "Mac Eng").
+
+  interface AddressSuggestion {
+    label: string;
+    detail: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    kind: "mcgill" | "place";
+  }
+
+  const SUGGEST_DELAY_MS = 250;
+  const suggestList = el("ul", undefined, "suggest-list");
+  suggestList.id = "address-suggestions";
+  suggestList.setAttribute("role", "listbox");
+  suggestList.setAttribute("aria-label", "Address suggestions");
+  suggestList.hidden = true;
+  addressInput.closest(".control")!.append(suggestList);
+  addressInput.setAttribute("role", "combobox");
+  addressInput.setAttribute("aria-autocomplete", "list");
+  addressInput.setAttribute("aria-controls", suggestList.id);
+  addressInput.setAttribute("aria-expanded", "false");
+  addressInput.autocomplete = "off"; // the browser's own list would cover ours
+
+  let suggestions: AddressSuggestion[] = [];
+  let activeSuggestion = -1;
+  let suggestTimer = 0;
+  let suggestAbort: AbortController | null = null;
+  /** True right after a suggestion is picked, until the field is typed in again. */
+  let suggestionPicked = false;
+
+  function closeSuggestions(): void {
+    suggestList.hidden = true;
+    addressInput.setAttribute("aria-expanded", "false");
+    addressInput.removeAttribute("aria-activedescendant");
+    activeSuggestion = -1;
+  }
+
+  function highlightSuggestion(index: number): void {
+    activeSuggestion = index;
+    suggestList.querySelectorAll<HTMLElement>(".suggest-option").forEach((li, i) => {
+      li.classList.toggle("active", i === index);
+      li.setAttribute("aria-selected", String(i === index));
+      if (i === index) li.scrollIntoView({ block: "nearest" });
+    });
+    if (index >= 0) addressInput.setAttribute("aria-activedescendant", `address-suggestion-${index}`);
+    else addressInput.removeAttribute("aria-activedescendant");
+  }
+
+  function renderSuggestions(note = ""): void {
+    suggestList.replaceChildren();
+    suggestions.forEach((s, i) => {
+      const li = el("li", undefined, "suggest-option");
+      li.id = `address-suggestion-${i}`;
+      li.setAttribute("role", "option");
+      li.setAttribute("aria-selected", "false");
+      li.append(icon(s.kind === "mcgill" ? "door" : "pin", 16));
+      const text = el("span", undefined, "suggest-text");
+      const main = el("span", s.label, "suggest-label");
+      if (s.kind === "mcgill") main.append(el("span", "McGill", "suggest-tag"));
+      text.append(main);
+      if (s.detail) text.append(el("span", s.detail, "suggest-detail"));
+      li.append(text);
+      // mousedown, not click: keep focus in the field so the list doesn't close first.
+      li.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        pickSuggestion(i);
+      });
+      li.addEventListener("mousemove", () => {
+        if (activeSuggestion !== i) highlightSuggestion(i);
+      });
+      suggestList.append(li);
+    });
+    if (note) suggestList.append(el("li", note, "suggest-note"));
+    const open = suggestions.length > 0 || Boolean(note);
+    suggestList.hidden = !open;
+    addressInput.setAttribute("aria-expanded", String(open));
+    activeSuggestion = -1;
+  }
+
+  async function fetchSuggestions(q: string): Promise<void> {
+    suggestAbort?.abort();
+    const abort = new AbortController();
+    suggestAbort = abort;
+    try {
+      const res = await fetch(`/api/geocode/suggest?${new URLSearchParams({ q })}`, { signal: abort.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json()) as { suggestions: AddressSuggestion[]; complete: boolean };
+      if (abort.signal.aborted || q !== addressInput.value.trim() || document.activeElement !== addressInput) return;
+      suggestions = body.suggestions;
+      renderSuggestions(suggestions.length === 0 && q.length >= 3 ? "No matches yet. Keep typing, or click the map below." : "");
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") closeSuggestions();
+    }
+  }
+
+  function pickSuggestion(index: number): void {
+    const s = suggestions[index];
+    if (!s) return;
+    suggestionPicked = true;
+    addressInput.value = s.address;
+    closeSuggestions();
+    setFieldError("address", "");
+    // An explicit pick moves the pin, even one placed by hand.
+    lookedUpAddress = s.address;
+    lookupLabel = [s.label, s.detail.replace(/ · McGill$/, "")].filter(Boolean).join(", ");
+    const latlng = L.latLng(s.latitude, s.longitude);
+    setPin(latlng, "lookup");
+    pinMap.setView(latlng, Math.max(pinMap.getZoom(), 17));
+    updatePreview();
+  }
+
+  addressInput.addEventListener("input", () => {
+    suggestionPicked = false;
+    window.clearTimeout(suggestTimer);
+    const q = addressInput.value.trim();
+    if (q.length < 2) {
+      suggestAbort?.abort();
+      closeSuggestions();
+      return;
+    }
+    suggestTimer = window.setTimeout(() => void fetchSuggestions(q), SUGGEST_DELAY_MS);
+  });
+
+  addressInput.addEventListener("keydown", (e) => {
+    const open = !suggestList.hidden && suggestions.length > 0;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!open) return;
+      e.preventDefault();
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      highlightSuggestion((activeSuggestion + step + suggestions.length) % suggestions.length);
+    } else if (e.key === "Enter" && open) {
+      e.preventDefault(); // pick (the highlighted one, else the top one), don't submit the form
+      pickSuggestion(Math.max(0, activeSuggestion));
+    } else if (e.key === "Escape" && !suggestList.hidden) {
+      e.preventDefault();
+      closeSuggestions();
+    }
+  });
+
+  addressInput.addEventListener("blur", () => {
+    window.clearTimeout(suggestTimer);
+    closeSuggestions();
   });
 
   // -------------------------------------------------------------------------

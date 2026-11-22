@@ -37,6 +37,7 @@ export function createApp() {
         "DELETE /api/events/:id/pictures/:pictureId",
         "GET    /api/walkways?south=&west=&north=&east=",
         "GET    /api/geocode?q=address",
+        "GET    /api/geocode/suggest?q=partial address or McGill building",
         "GET    /api/settings",
         "PUT    /api/settings   (admin: X-Admin-Key header)",
         "GET    /api/health",

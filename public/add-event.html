@@ -428,6 +428,76 @@
         animation: pop 0.14s ease-out;
         overscroll-behavior: contain;
       }
+      /* Address suggestions (same look as the time list). */
+      .suggest-list {
+        position: absolute;
+        z-index: 1200;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        max-height: 320px;
+        margin: 0;
+        padding: 6px;
+        overflow-y: auto;
+        list-style: none;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        box-shadow: var(--shadow-pop);
+        animation: pop 0.14s ease-out;
+        overscroll-behavior: contain;
+      }
+      .suggest-option {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        color: var(--text);
+      }
+      .suggest-option > .icon {
+        flex: none;
+        margin-top: 2px;
+        color: var(--muted);
+      }
+      .suggest-option.active {
+        background: var(--brand-soft);
+      }
+      .suggest-option.active > .icon {
+        color: var(--brand);
+      }
+      .suggest-text {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .suggest-label {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .suggest-detail {
+        overflow: hidden;
+        color: var(--text-2);
+        font-size: 12.5px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .suggest-tag {
+        margin-left: 6px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: #fde8e8;
+        color: #b91c1c;
+        font-size: 11px;
+        font-weight: 700;
+        vertical-align: 1px;
+      }
+      .suggest-note {
+        padding: 8px 10px;
+        color: var(--text-2);
+        font-size: 13px;
+      }
       @keyframes pop {
         from {
           opacity: 0;
@@ -1051,9 +1121,9 @@
               <label class="label" for="address">Address <span class="req" aria-hidden="true">*</span></label>
               <div class="control">
                 <svg class="icon"><use href="#i-pin" /></svg>
-                <input class="input" id="address" name="address" type="text" required maxlength="300" placeholder="e.g. 845 Sherbrooke St W, Montreal" autocomplete="street-address" />
+                <input class="input" id="address" name="address" type="text" required maxlength="300" placeholder="e.g. 845 Sherbrooke St W, or a McGill building like Trottier" autocomplete="off" />
               </div>
-              <div class="hint">Include the city. We'll drop a pin so you can check the spot.</div>
+              <div class="hint">Start typing an address or a McGill building name (Trottier, SSMU, Mac Eng…) and pick a suggestion. We'll drop a pin so you can check the spot.</div>
               <div class="error" id="address-error"></div>
             </div>
 
