@@ -56,6 +56,22 @@
         color: #78350f;
         border: 1px solid #f59e0b;
       }
+      /* Hover names on the pixel map (pixel-world.ts). */
+      .pixel-hover-name {
+        position: absolute;
+        left: 0;
+        top: 0;
+        z-index: 700;
+        pointer-events: none;
+        padding: 3px 7px;
+        background: #2e222f;
+        color: #ffffff;
+        border: 1px solid #625565;
+        border-radius: 3px;
+        font: 600 12px system-ui, -apple-system, "Segoe UI", sans-serif;
+        white-space: nowrap;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.35);
+      }
       /* Townspeople sprites (a canvas inside a Leaflet marker). */
       .npc-marker canvas {
         display: block;
@@ -538,7 +554,6 @@
       <span id="game-clock" title="Game time: townspeople follow their routines by this clock">Mon 8:00 AM</span>
       <span id="map-status">Loading events…</span>
       <a href="/add-event.html" id="add-event-link">Add event</a>
-      <a href="/area-editor.html">Edit area</a>
     </header>
     <div id="map"></div>
     <script src="/vendor/leaflet/leaflet.js"></script>
@@ -552,6 +567,7 @@
     <script src="/js/area-data.js"></script>
     <script src="/js/area.js"></script>
     <script src="/js/admin.js"></script>
+    <script src="/js/pixel-world.js"></script>
     <script src="/js/map.js"></script>
   </body>
 </html>

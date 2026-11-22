@@ -8,7 +8,7 @@
  * Raise it to watch a day go by in a demo, e.g. 60 makes an hour pass every minute.
  */
 const GAME_SPEED = 1;
-/** A routine "day" runs 6:00 AM to 6:00 AM the next morning; 2–6 AM everyone's home. */
+/** A routine "day" runs 6:00 AM to 6:00 AM the next morning; at night only the night walkers are out. */
 const GAME_DAY_START = 6 * 60;
 const GAME_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -83,10 +83,24 @@ function takeResidentName(random: () => number): string {
   return name;
 }
 
-/** A day's plan: when to leave home, where to go, and when to head back. */
-function makeRoutine(places: RoutinePlace[], random: () => number): RoutineStop[] {
+/**
+ * A day's plan: when to leave home, where to go, and when to head back. Night walkers sleep
+ * through the day and are out from the evening until just before 6 AM, so the streets are
+ * never empty. (Hours past midnight count on from 24, as the routine day runs 6 AM to 6 AM.)
+ */
+function makeRoutine(places: RoutinePlace[], random: () => number, nightWalker = false): RoutineStop[] {
   const at = (hour: number, spreadMinutes: number) => Math.round(hour * 60 + random() * spreadMinutes);
   const place = () => npcPick(places, random);
+  if (nightWalker) {
+    return [
+      { at: at(19, 120), activity: "stroll" }, // evening walk
+      { at: at(22, 60), activity: "visit", place: place() }, // a late spot
+      { at: at(24.5, 60), activity: "stroll" }, // after midnight
+      { at: at(26, 60), activity: random() < 0.5 ? "stroll" : "visit", place: place() },
+      { at: at(28, 60), activity: "stroll" }, // before dawn
+      { at: at(29.5, 15), activity: "home" }, // in by about 5:45 AM
+    ];
+  }
   const stops: RoutineStop[] = [
     { at: at(6.5, 150), activity: "visit", place: place() }, // morning: class or work
     { at: at(11.5, 75), activity: "visit", place: place() }, // lunch
@@ -119,13 +133,13 @@ class Resident implements Walker {
   /** Seconds until they wander a few steps (at a place) or set off again (strolling). */
   private restIn = 0;
 
-  constructor(npc: Npc, graph: WalkGraph, places: RoutinePlace[], random: () => number = Math.random) {
+  constructor(npc: Npc, graph: WalkGraph, places: RoutinePlace[], random: () => number = Math.random, nightWalker = false) {
     this.npc = npc;
     this.graph = graph;
     this.random = random;
     this.name = takeResidentName(random);
     this.home = graph.randomNode(random);
-    this.routine = makeRoutine(places, random);
+    this.routine = makeRoutine(places, random, nightWalker);
     this.node = this.home;
     this.moveTo(this.home);
     npc.opacity = 0;

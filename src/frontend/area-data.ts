@@ -1,5 +1,4 @@
 // The part of Montreal the event map is limited to, plus the places the NPC wanders to.
-// Edit this visually at /area-editor.html, then paste its output over this whole file.
 // Original outlines: OpenStreetMap (© OpenStreetMap contributors, ODbL). Points are [lat, lng].
 
 interface DowntownArea {
@@ -9,11 +8,12 @@ interface DowntownArea {
 
 const DOWNTOWN_AREAS: DowntownArea[] = [
   {
+    // A box square to the street grid: Rue de la Montagne (left), Rue Jeanne-Mance (right),
+    // Avenue Duluth Ouest (top) and Boulevard De Maisonneuve Ouest (bottom), each street
+    // included plus 10 m. The top-left corner is on Mount Royal, where the two streets would meet.
     name: "Region",
-     ring: [
-      [45.50141, -73.58004], [45.50293, -73.58314], [45.505, -73.58697], [45.5087, -73.58312],
-      [45.51218, -73.57975], [45.50824, -73.57116], [45.50697, -73.56827], [45.50277, -73.57253],
-      [45.49974, -73.57614],
+    ring: [
+      [45.50546, -73.5908], [45.51469, -73.58157], [45.50787, -73.56766], [45.49863, -73.57688],
     ],
   },
 ];

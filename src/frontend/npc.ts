@@ -913,10 +913,6 @@ class Npc {
     });
   }
 
-  walkTo(x: number, y: number): Promise<boolean> {
-    return this.followPath([{ x, y }]);
-  }
-
   stop(): void {
     this.path = [];
     this.endWalk(false);
