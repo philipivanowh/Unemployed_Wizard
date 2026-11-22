@@ -19,7 +19,7 @@ WATCHLIST = [
 
 DISCOVERY_SHARE_OF_DAILY_CALLS = 0.5
 
-
+DISCOVERY_MIN_INTERVAL = 10
 # The loop runs until stopped (Ctrl+C). A new pass starts DISCOVERY_INTERVAL seconds after the
 # last one started, or straight away if that pass took longer.
 DISCOVERY_INTERVAL = 5 * 60
