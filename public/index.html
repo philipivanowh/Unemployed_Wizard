@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Downtown Free Events</title>
     <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+    <!-- Pixel font for the walking-route card (matches the map's pixel labels). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" />
     <style>
       /* The hidden attribute always wins over display rules below. */
       [hidden] {
@@ -682,6 +686,163 @@
         gap: 10px;
         margin-top: 18px;
       }
+      /* ---- Pixel-art look for the walking route (card, location dialog, "Take me there") ----
+         A see-through grey panel with a hard pixel frame and stepped bevels lit from the
+         top-left, like the map art; text in a pixel font. */
+      .route-card,
+      .sheet,
+      .take-me-there {
+        --px-dark: #2e222f;
+        --px-panel: rgba(49, 54, 56, 0.84);
+        --px-light: rgba(255, 255, 255, 0.14);
+        --px-shade: rgba(0, 0, 0, 0.3);
+        --px-text: #f4f6f2;
+        --px-dim: #c7dcd0;
+        --px-accent: #fbff86;
+        --px-go: #72b84b;
+        font-family: "Pixelify Sans", ui-monospace, monospace;
+        -webkit-font-smoothing: none;
+        font-smooth: never;
+      }
+      .route-card,
+      .sheet {
+        background: var(--px-panel);
+        color: var(--px-text);
+        border: 3px solid var(--px-dark);
+        border-radius: 0;
+        box-shadow:
+          inset 3px 3px 0 var(--px-light),
+          inset -3px -3px 0 var(--px-shade),
+          6px 6px 0 rgba(46, 34, 47, 0.45);
+        animation: none;
+      }
+      .route-card .route-kicker {
+        color: var(--px-accent);
+        font-size: 13px;
+        letter-spacing: 0.08em;
+      }
+      .route-card .route-kicker::before {
+        border-radius: 0;
+        background: var(--px-accent);
+      }
+      .route-card[data-state="arrived"] .route-kicker {
+        color: var(--px-go);
+      }
+      .route-card[data-state="arrived"] .route-kicker::before {
+        background: var(--px-go);
+      }
+      .route-card .route-title,
+      .sheet h2 {
+        color: var(--px-text);
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-shadow: 2px 2px 0 var(--px-dark);
+      }
+      .route-card .route-close {
+        border-radius: 0;
+        color: var(--px-dim);
+        font-family: inherit;
+      }
+      .route-card .route-close:hover {
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--px-text);
+      }
+      .route-card .route-stats {
+        background: rgba(46, 34, 47, 0.45);
+        border: 2px solid var(--px-dark);
+        border-radius: 0;
+        box-shadow: inset 2px 2px 0 var(--px-shade);
+      }
+      .route-card .route-stat + .route-stat {
+        border-left: 2px solid var(--px-dark);
+      }
+      .route-card .route-stat b {
+        color: var(--px-text);
+        letter-spacing: 0;
+      }
+      .route-card .route-stat:first-child b {
+        color: var(--px-accent);
+      }
+      .route-card .route-stat span,
+      .route-card .route-note,
+      .sheet p {
+        color: var(--px-dim);
+      }
+      .route-card .route-note[data-state="done"] {
+        color: var(--px-go);
+      }
+      .route-card .route-note::before {
+        border-radius: 0;
+      }
+      /* The progress bar fills in whole blocks. */
+      .route-card .route-progress {
+        height: 10px;
+        border: 2px solid var(--px-dark);
+        border-radius: 0;
+        background: rgba(46, 34, 47, 0.55);
+      }
+      .route-card .route-progress i {
+        border-radius: 0;
+        background: repeating-linear-gradient(90deg, var(--px-accent) 0 8px, transparent 8px 10px);
+        transition: width 0.6s steps(12);
+      }
+      .route-card[data-state="arrived"] .route-progress i {
+        background: repeating-linear-gradient(90deg, var(--px-go) 0 8px, transparent 8px 10px);
+      }
+      .sheet .sheet-icon {
+        border-radius: 0;
+        background: rgba(46, 34, 47, 0.5);
+        border: 2px solid var(--px-dark);
+        color: var(--px-accent);
+      }
+      /* Pixel buttons: square, framed, pressed down when clicked. */
+      .route-card .route-btn,
+      .sheet .route-btn,
+      .take-me-there {
+        border: 2px solid var(--px-dark);
+        border-radius: 0;
+        background: #625565;
+        color: var(--px-text);
+        font: 600 14px "Pixelify Sans", ui-monospace, monospace;
+        box-shadow:
+          inset 2px 2px 0 var(--px-light),
+          inset -2px -2px 0 var(--px-shade);
+      }
+      .route-card .route-btn:hover,
+      .sheet .route-btn:hover {
+        background: #7f708a;
+      }
+      .route-card .route-btn:active,
+      .sheet .route-btn:active,
+      .take-me-there:active {
+        transform: translate(1px, 1px);
+        box-shadow: inset -2px -2px 0 var(--px-light), inset 2px 2px 0 var(--px-shade);
+      }
+      .route-card .route-btn-end {
+        color: #f68181;
+      }
+      .route-card .route-btn-primary,
+      .sheet .route-btn-primary,
+      .take-me-there {
+        background: #4f9a3b;
+        color: #ffffff;
+      }
+      .route-card .route-btn-primary:hover,
+      .sheet .route-btn-primary:hover,
+      .take-me-there:hover {
+        background: #72b84b;
+      }
+      .route-card .route-btn:focus-visible,
+      .route-card .route-close:focus-visible,
+      .sheet .route-btn:focus-visible,
+      .take-me-there:focus-visible {
+        outline: 2px solid var(--px-accent);
+        outline-offset: 2px;
+      }
+      .take-me-there::before {
+        background: currentColor;
+      }
+
       .event-popup {
         width: 220px;
       }
