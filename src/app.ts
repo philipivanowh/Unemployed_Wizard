@@ -6,6 +6,11 @@ import { config } from "./config.ts";
 import { HttpError } from "./errors.ts";
 import { eventsRouter } from "./events/routes.ts";
 import { geocodeRouter } from "./geocode-route.ts";
+<<<<<<< Updated upstream
+=======
+import { instagramRouter } from "./instagram-route.ts";
+import { mapDataRouter } from "./mapdata.ts";
+>>>>>>> Stashed changes
 import { settingsRouter } from "./settings-route.ts";
 import { walkwaysRouter } from "./walkways.ts";
 
@@ -17,7 +22,7 @@ export function createApp() {
 
   app.use("/uploads", express.static(config.uploadDir, { index: false, maxAge: "7d" }));
 
-  // Frontend: public/index.html (event map), public/area-editor.html, and compiled scripts in public/js.
+  // Frontend: public/index.html (event map), public/add-event.html, and compiled scripts in public/js.
   app.use(express.static(config.publicDir));
   // Leaflet (map library) straight from the npm package.
   app.use("/vendor/leaflet", express.static(config.leafletDir, { maxAge: "7d" }));
@@ -36,6 +41,7 @@ export function createApp() {
         "DELETE /api/events/:id",
         "DELETE /api/events/:id/pictures/:pictureId",
         "GET    /api/walkways?south=&west=&north=&east=",
+        "GET    /api/mapdata?south=&west=&north=&east=",
         "GET    /api/geocode?q=address",
         "GET    /api/geocode/suggest?q=partial address or McGill building",
         "GET    /api/settings",
@@ -51,6 +57,7 @@ export function createApp() {
 
   app.use("/api/events", eventsRouter);
   app.use("/api/walkways", walkwaysRouter);
+  app.use("/api/mapdata", mapDataRouter);
   app.use("/api/geocode", geocodeRouter);
   app.use("/api/settings", settingsRouter);
 
@@ -73,6 +80,10 @@ export function createApp() {
     }
     if (err instanceof HttpError) {
       res.status(err.status).json({ error: err.message, details: err.details });
+      return;
+    }
+    if (err?.type === "entity.too.large") {
+      res.status(413).json({ error: "That's too big to send in one request" });
       return;
     }
     if (err?.type === "entity.parse.failed") {

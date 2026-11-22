@@ -1,0 +1,237 @@
+{
+ "tileset_id": "c1231e9e-79bb-448a-b842-4e0e5e757111",
+ "tile_size": 16,
+ "lower": "grass",
+ "upper": "sidewalk",
+ "note": "Wang corner tiles: pick a tile by which of its 4 corners are lower/upper terrain; rect is its x,y,w,h in the 64x64 sheet.",
+ "tiles": [
+  {
+   "corners": {
+    "NW": "upper",
+    "NE": "upper",
+    "SW": "lower",
+    "SE": "upper"
+   },
+   "rect": [
+    0,
+    0,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "upper",
+    "NE": "lower",
+    "SW": "upper",
+    "SE": "lower"
+   },
+   "rect": [
+    16,
+    0,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "lower",
+    "NE": "upper",
+    "SW": "lower",
+    "SE": "lower"
+   },
+   "rect": [
+    32,
+    0,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "upper",
+    "NE": "upper",
+    "SW": "lower",
+    "SE": "lower"
+   },
+   "rect": [
+    48,
+    0,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "lower",
+    "NE": "upper",
+    "SW": "upper",
+    "SE": "lower"
+   },
+   "rect": [
+    0,
+    16,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "upper",
+    "NE": "lower",
+    "SW": "lower",
+    "SE": "lower"
+   },
+   "rect": [
+    16,
+    16,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "lower",
+    "NE": "lower",
+    "SW": "lower",
+    "SE": "lower"
+   },
+   "rect": [
+    32,
+    16,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "lower",
+    "NE": "lower",
+    "SW": "lower",
+    "SE": "upper"
+   },
+   "rect": [
+    48,
+    16,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "upper",
+    "NE": "lower",
+    "SW": "upper",
+    "SE": "upper"
+   },
+   "rect": [
+    0,
+    32,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "lower",
+    "NE": "lower",
+    "SW": "upper",
+    "SE": "upper"
+   },
+   "rect": [
+    16,
+    32,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "lower",
+    "NE": "lower",
+    "SW": "upper",
+    "SE": "lower"
+   },
+   "rect": [
+    32,
+    32,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "lower",
+    "NE": "upper",
+    "SW": "lower",
+    "SE": "upper"
+   },
+   "rect": [
+    48,
+    32,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "upper",
+    "NE": "upper",
+    "SW": "upper",
+    "SE": "upper"
+   },
+   "rect": [
+    0,
+    48,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "upper",
+    "NE": "upper",
+    "SW": "upper",
+    "SE": "lower"
+   },
+   "rect": [
+    16,
+    48,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "upper",
+    "NE": "lower",
+    "SW": "lower",
+    "SE": "upper"
+   },
+   "rect": [
+    32,
+    48,
+    16,
+    16
+   ]
+  },
+  {
+   "corners": {
+    "NW": "lower",
+    "NE": "upper",
+    "SW": "upper",
+    "SE": "upper"
+   },
+   "rect": [
+    48,
+    48,
+    16,
+    16
+   ]
+  }
+ ],
+ "pixellab_base_tile_ids": {
+  "grass": "d73f8fb4-42c6-40c4-8ab0-9a6acb653237",
+  "sidewalk": "7dd9c1dd-b85b-4dfb-bcbd-6e6ceedf93c9"
+ }
+}

@@ -22,7 +22,7 @@ const WALKABLE =
 const MAX_SPAN_DEGREES = 0.08; // about 8 km; bigger boxes are refused (the OSM API caps a box at 50,000 nodes)
 const CACHE_DAYS = 30;
 
-const bboxSchema = z
+export const bboxSchema = z
   .object({
     south: z.coerce.number().min(-90).max(90),
     west: z.coerce.number().min(-180).max(180),
@@ -35,7 +35,7 @@ const bboxSchema = z
     `The box can be at most ${MAX_SPAN_DEGREES}° on each side`,
   );
 
-type Bbox = z.infer<typeof bboxSchema>;
+export type Bbox = z.infer<typeof bboxSchema>;
 
 const cacheDir = path.join(path.dirname(config.dbPath), "walkways");
 /** Requests in flight, so simultaneous page loads share one Overpass call. */
@@ -113,16 +113,30 @@ out skel qt;`;
 
 /**
  * Fallback when Overpass is busy (it often is): the main OpenStreetMap API's map call.
- * It's meant for occasional reads, which is fine here because results are cached.
+ * It's meant for occasional reads, which is fine here because results are cached. It refuses
+ * boxes with more than 50,000 nodes, so the box is fetched in pieces of about 1 km and merged.
  */
+export async function fetchOsmApiElements<T extends { type: string; id: number }>(b: Bbox): Promise<T[]> {
+  const STEP = 0.01;
+  const merged = new Map<string, T>();
+  for (let south = b.south; south < b.north; south += STEP) {
+    for (let west = b.west; west < b.east; west += STEP) {
+      const north = Math.min(b.north, south + STEP);
+      const east = Math.min(b.east, west + STEP);
+      const url = `https://api.openstreetmap.org/api/0.6/map.json?bbox=${west},${south},${east},${north}`;
+      const res = await fetch(url, {
+        headers: { "User-Agent": config.geocoderUserAgent, Accept: "application/json" },
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!res.ok) throw new Error(`OpenStreetMap API responded with HTTP ${res.status}`);
+      for (const el of ((await res.json()) as { elements: T[] }).elements) merged.set(`${el.type}/${el.id}`, el);
+    }
+  }
+  return [...merged.values()];
+}
+
 async function fetchFromOsmApi(b: Bbox): Promise<WalkwayGraph> {
-  const url = `https://api.openstreetmap.org/api/0.6/map.json?bbox=${b.west},${b.south},${b.east},${b.north}`;
-  const res = await fetch(url, {
-    headers: { "User-Agent": config.geocoderUserAgent, Accept: "application/json" },
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!res.ok) throw new Error(`OpenStreetMap API responded with HTTP ${res.status}`);
-  return buildGraph(((await res.json()) as { elements: OsmElement[] }).elements);
+  return buildGraph(await fetchOsmApiElements<OsmElement>(b));
 }
 
 async function fetchWalkways(b: Bbox): Promise<WalkwayGraph> {

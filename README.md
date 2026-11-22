@@ -36,9 +36,14 @@ Environment variables (all optional):
 ## Frontend
 
 - `http://localhost:3000/`: upcoming events on an OpenStreetMap map drawn with Leaflet (`src/frontend/map.ts`).
-  It opens on the McGill area, and you can pan and zoom anywhere. Every event with a location gets a pin.
+  It opens on the area box in `area-data.ts` (Rue de la Montagne to Rue Jeanne-Mance, Boulevard De Maisonneuve
+  to Avenue Duluth), and you can't pan or zoom out past it; street-map tiles outside it aren't loaded. Inside it the
+  map is drawn as pixel art (`pixel-world.ts`, art in `public/tiles/`, OpenStreetMap data from `/api/mapdata`), with
+  street names from zoom 17 and building names from zoom 18 (`LABEL_STREET_ZOOM`, `LABEL_BUILDING_ZOOM`); hovering a
+  building or street shows its name.
+  Every event with a location gets a pin.
   **Back to McGill** (under the zoom buttons) returns to 845 Sherbrooke St W. Set `MAP_ROTATION` (degrees,
-  clockwise) at the top of `map.ts` to rotate it. Rotation uses the
+  clockwise) in `area.ts` to rotate it; moving it also moves the hand edits in `public/map-edits.json`. Rotation uses the
   [leaflet-rotate](https://github.com/Raruto/leaflet-rotate) add-on, which is licensed **GPL-3.0**.
 - **Edit / Remove**: each event's popup has an **Edit** button, which opens the event in the add-event form, and a
   **Remove** button, which asks once more before deleting. Both appear only when editing is allowed
@@ -48,7 +53,8 @@ Environment variables (all optional):
   - `npc.ts`: the sprites. Each person is built from 10 features (skin, eyes, hair, facial hair, top, bottoms,
     shoes, hat, glasses, bag), each with several styles and many colors, listed in `NPC_FEATURES`. `NPC_SIZE` scales them.
   - `routine.ts`: the clock in the header and each person's day: out in the morning, lunch, an afternoon
-    stroll or visit, an evening spot, then home for the night. The clock follows real time. Set `GAME_SPEED`
+    stroll or visit, an evening spot, then home for the night. A few night walkers (`NIGHT_WALKER_COUNT` in `map.ts`)
+    keep the opposite hours, out from the evening until dawn, so the streets are never empty. The clock follows real time. Set `GAME_SPEED`
     (for example 60) to make a day go by faster in a demo.
   - `crowds.ts`: crowds at live events. From 20 minutes before an event starts until it ends, `CROWD_SIZE`
     people walk in along the paths and gather around its pin. Then they leave. Live events get a pulsing ring
@@ -82,8 +88,12 @@ The switch is enforced by the server, not just hidden in the page. When it's off
 the database, so it survives restarts. The key is generated on first start and saved in the database. To pick your
 own key, set `ADMIN_KEY`; the server then doesn't print it. Anyone with the key has full control, so share it only
 with people who should moderate events.
-- `http://localhost:3000/area-editor.html`: edit the map's area outline and the NPC's spots on a map, then paste
-  the generated code into `src/frontend/area-data.ts`.
+- **Hand edits to the pixel-art map** live in `public/map-edits.json`, drawn over the OpenStreetMap data. Positions
+  are on the rotated art grid (zoom-19 map pixels turned by `MAP_ROTATION`; one tile is 16):
+  `buildings` overrides by OpenStreetMap id (`x`, `y`, `w`, `h`, `look`, or `"removed": true`), `terrain` sets tile
+  corners (`"column,row": 0` grass, 1 dirt, 2 sidewalk, 3 water, 4 road) and `fences` puts a fence on a tile
+  (`"column,row": 1`, using `public/tiles/fence.png`). It currently holds the fence along Sherbrooke in front of the
+  Roddick Gates. The area outline itself is set in `src/frontend/area-data.ts`.
 - `http://localhost:3000/api`: a list of the API endpoints.
 
 ### Address lookup

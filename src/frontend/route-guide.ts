@@ -79,7 +79,6 @@ class RouteGuide {
   private readonly layer: L.LayerGroup;
   private target: GuideTarget | null = null;
   private watchId: number | null = null;
-  private user: L.LatLng | null = null;
   private routedFrom: L.LatLng | null = null;
   private startDistance = 0;
   private routeBounds: L.LatLngBounds | null = null;
@@ -215,7 +214,6 @@ class RouteGuide {
     this.watchId = null;
     const wasActive = this.target !== null;
     this.target = null;
-    this.user = null;
     this.routedFrom = null;
     this.routeBounds = null;
     this.userMarker = null;
@@ -304,7 +302,6 @@ class RouteGuide {
   private onPosition(position: GeolocationPosition, first: boolean): void {
     if (!this.target) return;
     const here = L.latLng(position.coords.latitude, position.coords.longitude);
-    this.user = here;
     this.drawUser(here, position.coords.accuracy);
 
     const goal = L.latLng(this.target.latitude, this.target.longitude);

@@ -1,5 +1,5 @@
-// Map page: upcoming events as pins on an OpenStreetMap map. It opens on the McGill area
-// (area-data.ts) and you can pan anywhere; "Back to McGill" returns. Townspeople walk the
+// Map page: upcoming events as pins on an OpenStreetMap map, limited to the area box
+// (area-data.ts); "Back to McGill" returns. Townspeople walk the
 // area's real walkways on a daily routine, crowds gather at events in the area while
 // they're on, and "Take me there" draws a walking route. Event popups have Edit and Remove
 // buttons when editing is allowed (see admin.ts).
@@ -24,12 +24,7 @@ interface MapEvent {
 // ---------------------------------------------------------------------------
 // Map
 
-/**
- * Map rotation in degrees, clockwise: 0 keeps north up, 90 turns the map a quarter
- * turn clockwise, -30 tilts it 30° the other way. Pins, popups and the NPC stay upright.
- * Uses the leaflet-rotate add-on (GPL-3.0).
- */
-const MAP_ROTATION = 55;
+// MAP_ROTATION (the map's bearing) lives in area.ts, shared with the map editor.
 
 const areaRings = DOWNTOWN_AREAS.map((area) => area.ring);
 const areaBounds = L.latLngBounds(areaRings.flat());
@@ -52,14 +47,26 @@ eventMap.fitBounds(areaBounds);
 eventMap.setBearing(MAP_ROTATION);
 eventMap.fitBounds(areaBounds);
 
+// The area is the whole explorable map: the view never leaves the box (pixel-world.ts).
 /** Zoom used by "Back to McGill": the opening view's zoom, so it looks like the start. */
-const homeZoom = eventMap.getZoom();
+const homeZoom = limitViewToArea(eventMap, areaRings, MAP_ROTATION);
+eventMap.setView(MCGILL, homeZoom, { animate: false });
 
 // OpenStreetMap's tile servers require this attribution and are meant for light use.
+// maxZoom 20 is one step past the street map's last zoom, where the pixel-art layer is drawn 2x.
+// (It's set here, not on the map, because a map maxZoom upsets the opening fitBounds above.)
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 19,
+  // Only the tiles that cover the area are fetched; nothing outside it is drawn.
+  bounds: areaBounds,
+  maxNativeZoom: 19,
+  maxZoom: 20,
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
 }).addTo(eventMap);
+
+// Pixel-art terrain and buildings inside the area outline (pixel-world.ts). Until it has
+// loaded, or if the map data can't be fetched, the street map shows there instead.
+const pixelWorld = new PixelWorld(eventMap, { bearing: MAP_ROTATION, rings: areaRings, isInArea: isInDowntown });
+pixelWorld.start(areaBounds.pad(0.01)).catch((err) => console.warn("Couldn't draw the pixel-art map; showing the street map.", err));
 
 // "Back to McGill" button, under the zoom buttons.
 const HomeControl = L.Control.extend({
@@ -333,6 +340,8 @@ function updateLive(): void {
 
 /** How many residents walk around (crowds and the guide come on top). */
 const NPC_COUNT = 14;
+/** How many of them keep night hours (out from the evening until dawn; routine.ts). */
+const NIGHT_WALKER_COUNT = 4;
 const NPC_MAP_ZOOM = 16;
 
 // Own pane: above the live rings (590) but below the event pins (600), so people never
@@ -381,7 +390,7 @@ let walkGraph: WalkGraph | null = null;
 let crowds: CrowdManager | null = null;
 
 async function loadWalkGraph(): Promise<WalkGraph | null> {
-  const b = areaBounds.pad(0.02);
+  const b = areaBounds.pad(0.01);
   const params = new URLSearchParams({
     south: b.getSouth().toFixed(4),
     west: b.getWest().toFixed(4),
@@ -453,7 +462,7 @@ async function startPeople(): Promise<void> {
   const network = graph ?? fallbackGraph();
   const places = routinePlaces(network);
   for (let i = 0; i < NPC_COUNT; i++) {
-    const resident = new Resident(makeNpc(), network, places);
+    const resident = new Resident(makeNpc(), network, places, Math.random, i < NIGHT_WALKER_COUNT);
     resident.placeAt(gameClock);
     addWalker(resident);
   }
