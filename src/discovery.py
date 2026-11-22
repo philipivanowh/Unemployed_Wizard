@@ -12,7 +12,8 @@ Which posts count as "already handled":
     python src/discovery.py            # run forever (Ctrl+C to stop)
     python src/discovery.py --once     # one pass, then exit (handy for testing / cron)
 
-Settings (WATCHLIST, DISCOVERY_INTERVAL, ...) are in config.py.
+Settings (WATCHLIST, DISCOVERY_INTERVAL, ...) are in config.py. Besides config.WATCHLIST it checks
+the accounts build_watchlist.py saved in config.WATCHLIST_FILE.
 Needs the TS backend running and the parser's API keys set (see config.REQUIRED_API_KEYS).
 """
 import argparse
@@ -22,6 +23,7 @@ import sys
 import time
 
 import config
+import watchlist
 from ingest import TransientError, get_parser, ingest_posts
 from instagram_scrapper.scrapper import InstagramError, fetch_posts
 
@@ -87,7 +89,9 @@ def discover_account(username, seen):
 def discover_once():
     seen = load_seen()
     total = 0
-    for i, username in enumerate(config.WATCHLIST):
+    accounts = watchlist.active_usernames()  # reread every pass: build_watchlist.py may have added some
+    log.info("discovery pass started (%d accounts)", len(accounts))
+    for i, username in enumerate(accounts):
         if i:
             time.sleep(config.PAUSE_BETWEEN_ACCOUNTS)
         try:
@@ -100,7 +104,6 @@ def discover_once():
 def run_forever():
     while True:
         started = time.time()
-        log.info("discovery pass started (%d accounts)", len(config.WATCHLIST))
         created = discover_once()
         log.info("discovery pass done: %d new events", created)
         time.sleep(max(0, config.DISCOVERY_INTERVAL - (time.time() - started)))

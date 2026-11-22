@@ -43,6 +43,22 @@ def clean_post(m):
     }
 
 
+def graph_get(path, params):
+    """GET a Graph API path with our access token. Raises InstagramError on failure."""
+    url = f"https://graph.facebook.com/{GRAPH_VERSION}/{path}"
+    try:
+        r = requests.get(url, params={**params, "access_token": ACCESS_TOKEN}, timeout=20)
+    except requests.RequestException as e:
+        raise InstagramError(502, f"Request to Graph API failed: {e}")
+    try:
+        body = r.json()
+    except ValueError:
+        raise InstagramError(r.status_code, r.text[:300])
+    if r.status_code != 200:
+        raise InstagramError(r.status_code, body.get("error", body))
+    return body
+
+
 def fetch_posts(username, limit=5, after=None):
     """Recent posts of a business/creator account.
 
@@ -62,16 +78,7 @@ def fetch_posts(username, limit=5, after=None):
         media += f".after({after})"
 
     fields = f"business_discovery.username({username}){{username,name,{media}{{{MEDIA_FIELDS}}}}}"
-    url = f"https://graph.facebook.com/{GRAPH_VERSION}/{IG_USER_ID}"
-
-    try:
-        r = requests.get(url, params={"fields": fields, "access_token": ACCESS_TOKEN}, timeout=20)
-    except requests.RequestException as e:
-        raise InstagramError(502, f"Request to Graph API failed: {e}")
-
-    body = r.json()
-    if r.status_code != 200:
-        raise InstagramError(r.status_code, body.get("error", body))
+    body = graph_get(IG_USER_ID, {"fields": fields})
 
     bd = body.get("business_discovery", {})
     media_obj = bd.get("media", {})
@@ -81,3 +88,42 @@ def fetch_posts(username, limit=5, after=None):
         "posts": [clean_post(m) for m in media_obj.get("data", [])],
         "next_cursor": media_obj.get("paging", {}).get("cursors", {}).get("after"),
     }
+
+
+def fetch_profile(username, limit=25):
+    """Profile and recent captions of a business/creator account: a lighter call than
+    fetch_posts (no image URLs), for deciding whether an account is worth watching.
+
+    Returns {"username", "name", "biography", "followers_count", "posts": [{id, caption, permalink, timestamp}]}.
+    """
+    username = (username or "").strip().lstrip("@")
+    if not username:
+        raise ValueError("Missing username")
+    limit = max(1, min(int(limit), 50))
+    fields = (f"business_discovery.username({username})"
+              f"{{username,name,biography,followers_count,media.limit({limit}){{id,caption,permalink,timestamp}}}}")
+    bd = graph_get(IG_USER_ID, {"fields": fields}).get("business_discovery", {})
+    return {
+        "username": bd.get("username"),
+        "name": bd.get("name"),
+        "biography": bd.get("biography"),
+        "followers_count": bd.get("followers_count"),
+        "posts": (bd.get("media") or {}).get("data", []),
+    }
+
+
+def hashtag_posts(tag, edges=("recent_media", "top_media"), limit=50):
+    """Posts using a hashtag (recent_media only covers the last 24 hours).
+
+    Needs the app's "Instagram Public Content Access" feature, and Instagram allows only 30
+    different hashtags per account per 7 days. The posts don't say who made them.
+    """
+    found = graph_get("ig_hashtag_search", {"user_id": IG_USER_ID, "q": tag.lstrip("#")}).get("data") or []
+    if not found:
+        return []
+    posts = []
+    for edge in edges:
+        body = graph_get(f"{found[0]['id']}/{edge}",
+                         {"user_id": IG_USER_ID, "fields": "id,caption,permalink,timestamp", "limit": limit})
+        posts.extend(body.get("data", []))
+    return posts
