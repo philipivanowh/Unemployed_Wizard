@@ -6,6 +6,8 @@
 import os
 import requests
 
+from instagram_scrapper import throttle
+
 # --- Credentials (set here, or via environment variables) -------------------
 IG_USER_ID = os.getenv("IG_USER_ID", "17841466659616214")  # YOUR IG business account ID
 ACCESS_TOKEN = os.getenv("IG_ACCESS_TOKEN", "")  # never commit a token: Meta blocks leaked ones
@@ -36,7 +38,8 @@ class InstagramError(Exception):
 
     @property
     def fatal(self):
-        return self.code in self.FATAL_CODES or self.status == 502  # 502: we couldn't reach Instagram
+        # 502: we couldn't reach Instagram. 429: our own limits say stop (throttle.py).
+        return self.code in self.FATAL_CODES or self.status in (429, 502)
 
     @property
     def message(self):
@@ -65,6 +68,11 @@ def graph_get(path, params):
     """GET a Graph API path with our access token. Raises InstagramError on failure."""
     if not ACCESS_TOKEN:
         raise InstagramError(401, {"code": 190, "message": "Set the IG_ACCESS_TOKEN environment variable"})
+    # Every call waits its turn under the shared limits (see throttle.py).
+    try:
+        throttle.before_call(ACCESS_TOKEN)
+    except throttle.Refused as e:
+        raise InstagramError(429, {"code": "paused", "message": str(e)})
     url = f"https://graph.facebook.com/{GRAPH_VERSION}/{path}"
     try:
         r = requests.get(url, params={**params, "access_token": ACCESS_TOKEN}, timeout=20)
@@ -73,9 +81,12 @@ def graph_get(path, params):
     try:
         body = r.json()
     except ValueError:
+        throttle.after_call(ACCESS_TOKEN, r.headers)
         raise InstagramError(r.status_code, r.text[:300])
+    error = body.get("error") if isinstance(body, dict) else None
+    throttle.after_call(ACCESS_TOKEN, r.headers, error.get("code") if isinstance(error, dict) else None)
     if r.status_code != 200:
-        raise InstagramError(r.status_code, body.get("error", body))
+        raise InstagramError(r.status_code, error or body)
     return body
 
 

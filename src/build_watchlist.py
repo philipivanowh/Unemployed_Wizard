@@ -14,8 +14,14 @@ added if enough of them offer free food, it posted recently, and it mentions McG
 to be readable (business or creator accounts). The mentions of every account that gets added
 join the queue as well, so the list grows outward from accounts that work.
 
-Watched accounts are reread every config.REFRESH_DAYS, which records how many of their recent
-posts offer food. With --retire, accounts that stopped posting food are retired.
+Watched accounts aren't fetched again: their @mentions and food-post rate come from the posts
+the discovery loop already fetched (config.RECENT_POSTS_FILE). With --retire, accounts that
+stopped posting food are retired.
+
+Kept deliberately slow, because Meta cancels tokens that look like scrapers: each run makes at
+most config.MAX_API_CALLS calls and adds at most config.MAX_NEW_ACCOUNTS_PER_RUN accounts, runs
+at most once every config.MIN_HOURS_BETWEEN_RUNS hours, and stops adding at
+config.MAX_WATCHED_ACCOUNTS. All Graph API calls also share the limits in throttle.py.
 
     python src/build_watchlist.py                 # one run
     python src/build_watchlist.py --dry-run       # show what would change, save nothing
@@ -24,8 +30,8 @@ posts offer food. With --retire, accounts that stopped posting food are retired.
     python src/build_watchlist.py --list          # print the watchlist and exit
 
 Results go to config.WATCHLIST_FILE. The discovery loop rereads it on every pass, so both can
-run at the same time. Each run makes at most config.MAX_API_CALLS Graph API calls; candidates
-it doesn't get to wait for the next run.
+run at the same time. Candidates a run doesn't get to wait for the next one. Within
+MIN_HOURS_BETWEEN_RUNS, --add still works but only checks the accounts you name.
 """
 import argparse
 import copy
@@ -111,7 +117,9 @@ def short_error(error):
 class Builder:
     def __init__(self, accounts, max_calls, retire):
         self.accounts = accounts
-        self.calls_left = max_calls
+        self.calls_left = min(max_calls, config.MAX_API_CALLS)
+        self.added = 0
+        self.forced = set()  # named with --add
         self.calls_made = 0
         self.retire = retire
         self.seeds = {normalize(u) for u in config.WATCHLIST}
@@ -127,8 +135,7 @@ class Builder:
     def call(self, fn, *args, cost=1, **kwargs):
         if self.calls_left < cost:
             raise StopRun(f"used all {self.calls_made} API calls allowed per run (config.MAX_API_CALLS)")
-        if self.calls_made:
-            time.sleep(config.PAUSE_BETWEEN_CALLS)
+        # No sleeping here: graph_get waits its turn under the shared limits (throttle.py).
         self.calls_left -= cost
         self.calls_made += cost
         try:
@@ -156,6 +163,8 @@ class Builder:
         if not USERNAME_RE.fullmatch(u) or u in self.ignored or u in NOT_ACCOUNTS:
             return
         self.found_via.setdefault(u, set()).add(source)
+        if force:
+            self.forced.add(u)
         if force or self.is_due(u):
             heapq.heappush(self.queue, (priority, next(self.order), u))
 
@@ -213,6 +222,10 @@ class Builder:
             profile = self.call(fetch_profile, username, limit=limit)
         except InstagramError as e:
             return None, f"can't be read (private, personal, renamed or gone): {short_error(e)}"
+        return profile, self.stats_for(profile)
+
+    @staticmethod
+    def stats_for(profile):
         posts = profile["posts"]
         texts = [profile.get("name") or "", profile.get("biography") or ""] + [p.get("caption") or "" for p in posts]
         stats = {
@@ -224,7 +237,9 @@ class Builder:
             "checked_at": now_iso(),
         }
         stats["local"] = any(LOCAL_RE.search(t.lower()) for t in texts)
-        return profile, stats
+        if stats["name"] is None:
+            del stats["name"], stats["followers"]  # not known from cached posts: keep the old values
+        return stats
 
     def record(self, username, status, reason, stats=None, sources=()):
         old = self.accounts.get(username, {})
@@ -263,49 +278,60 @@ class Builder:
         self.record(username, status, reason, stats, sources)
         log.info("%-30s %-8s %s", username, status, reason)
         if status == "active":
+            self.added += 1
             self.offer_mentions(username, profile["posts"])
 
     def refresh_watched(self):
-        """Reread watched accounts that are due: new mentions, and their current food-post rate."""
+        """Update watched accounts from the posts the discovery loop already fetched, without any
+        API call: their @mentions join the queue, and their food-post rate is recorded."""
+        cache = watchlist.recent_posts()
         watched = sorted(self.seeds | {u for u, a in self.accounts.items() if a.get("status") == "active"})
-        limit = max(config.VET_POSTS, config.RETIRE_AFTER_POSTS) if self.retire else config.VET_POSTS
         for username in watched:
-            if days_since(self.accounts.get(username, {}).get("checked_at")) < config.REFRESH_DAYS:
-                continue
+            cached = cache.get(username)
+            entry = self.accounts.get(username, {})
+            if not cached or entry.get("refreshed_from") == cached.get("fetched_at"):
+                continue  # nothing new since last time
             self.done.add(username)
-            profile, stats = self.look(username, limit)
-            is_seed = username in self.seeds
-            if profile is None:
-                if is_seed:
-                    log.warning("%s (in config.WATCHLIST) %s", username, stats)
-                else:
-                    self.record(username, "unavailable", stats)
-                continue
-            self.offer_mentions(username, profile["posts"])
+            posts = cached.get("posts", [])
+            self.offer_mentions(username, posts)
+            stats = {**self.stats_for({"posts": posts}), "refreshed_from": cached.get("fetched_at")}
             n, food = stats["posts_checked"], stats["food_posts"]
-            if is_seed:
+            if username in self.seeds:
                 self.record(username, "active", "in config.WATCHLIST", stats, ["config"])
             elif self.retire and n >= config.RETIRE_AFTER_POSTS and food == 0:
                 self.record(username, "retired", f"no food posts in its last {n}", stats)
             elif self.retire and days_since(stats["last_post_at"]) > config.MAX_INACTIVE_DAYS:
                 self.record(username, "retired", f"no posts since {(stats['last_post_at'] or '?')[:10]}", stats)
             else:
-                self.record(username, "active", self.accounts[username].get("reason", ""), stats)
-            log.info("%-30s refreshed: %d food posts in its last %d", username, food, n)
+                self.record(username, "active", entry.get("reason", ""), stats)
+            log.debug("%-30s refreshed from cache: %d food posts in its last %d", username, food, n)
+
+    def watched_found(self):
+        return sum(1 for u, a in self.accounts.items() if a.get("status") == "active" and u not in self.seeds)
 
     # --- a run ---------------------------------------------------------------
 
-    def run(self, added):
-        self.from_backend()
+    def run(self, added, discover=True):
+        """discover=False: only check the accounts named with --add."""
         for name in added:
             self.offer(name, "--add", P_TRUSTED, force=True)
-        self.from_directories()
-        self.refresh_watched()
-        self.from_hashtags()
+        if discover:
+            self.from_backend()
+            self.from_directories()
+            self.refresh_watched()
+            self.from_hashtags()
         while self.queue:
             _, _, username = heapq.heappop(self.queue)
             if username in self.done:
                 continue
+            if username not in self.forced:
+                if not discover:
+                    continue
+                if self.added >= config.MAX_NEW_ACCOUNTS_PER_RUN:
+                    raise StopRun(f"added {self.added} accounts, the most per run (config.MAX_NEW_ACCOUNTS_PER_RUN)")
+                if self.watched_found() >= config.MAX_WATCHED_ACCOUNTS:
+                    raise StopRun(f"the watchlist is full ({config.MAX_WATCHED_ACCOUNTS} found accounts, "
+                                  "config.MAX_WATCHED_ACCOUNTS); use --retire or raise the limit")
             self.vet(username)
 
 
@@ -328,7 +354,8 @@ def main(argv=None):
     ap.add_argument("--add", nargs="+", default=[], metavar="ACCOUNT", help="vet these accounts now and add them if readable")
     ap.add_argument("--retire", action="store_true", help="retire active accounts that stopped posting food")
     ap.add_argument("--dry-run", action="store_true", help="show what would change without saving")
-    ap.add_argument("--max-calls", type=int, default=config.MAX_API_CALLS, help="Graph API calls this run may make")
+    ap.add_argument("--max-calls", type=int, default=config.MAX_API_CALLS,
+                    help="Graph API calls this run may make (at most config.MAX_API_CALLS)")
     ap.add_argument("--list", action="store_true", help="print the watchlist and exit")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
@@ -344,16 +371,27 @@ def main(argv=None):
         print_list(saved)
         return
 
+    # Once a day at most: a run that keeps looking up new accounts is what gets tokens cancelled.
+    hours = days_since(watchlist.last_run_at()) * 24
+    discover = hours >= config.MIN_HOURS_BETWEEN_RUNS
+    if not discover:
+        wait = config.MIN_HOURS_BETWEEN_RUNS - hours
+        if not args.add:
+            print(f"The watchlist was last built {hours:.1f} h ago; the next run is allowed in {wait:.1f} h "
+                  f"(config.MIN_HOURS_BETWEEN_RUNS). Use --add to check specific accounts now.")
+            return
+        log.info("last run %.1f h ago: only checking the accounts given with --add", hours)
+
     builder = Builder(copy.deepcopy(saved), args.max_calls, args.retire)
     try:
-        builder.run(args.add)
+        builder.run(args.add, discover)
     except StopRun as e:
         log.warning("stopping early: %s", e)
     except KeyboardInterrupt:
         log.warning("interrupted; keeping what was found so far")
     finally:
         if not args.dry_run:
-            watchlist.save(builder.accounts)
+            watchlist.save(builder.accounts, last_run=now_iso() if discover else None)
 
     added = [c for c in builder.changes if c[2] == "active"]
     print(f"\n{len(added)} account(s) added, {builder.calls_made} API call(s) used"
