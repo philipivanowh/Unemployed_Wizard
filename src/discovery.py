@@ -1,14 +1,19 @@
 """Event discovery loop.
 
 Every DISCOVERY_INTERVAL seconds: for each watched Instagram account, fetch its recent posts,
-drop the ones already covered (older than the backend's latest-event timestamp, or in our seen
-list), run the rest through the parser and push the resulting events to the TypeScript backend.
+skip the ones already handled, run the new ones through the parser (OCR + LLMs) and push the
+resulting events to the TypeScript backend.
+
+Which posts count as "already handled":
+  - posts that became events: the backend keeps that list itself (ingest.py asks for it)
+  - posts judged not to be events: remembered in config.SEEN_FILE, so the paid parser calls
+    aren't repeated for them every pass
 
     python src/discovery.py            # run forever (Ctrl+C to stop)
     python src/discovery.py --once     # one pass, then exit (handy for testing / cron)
 
 Settings (WATCHLIST, DISCOVERY_INTERVAL, ...) are in config.py.
-Needs the TS backend running and MOONSHOT_API_KEY set.
+Needs the TS backend running and the parser's API keys set (see config.REQUIRED_API_KEYS).
 """
 import argparse
 import json
@@ -17,14 +22,14 @@ import sys
 import time
 
 import config
-from ingest import fetch_latest_timestamp, format_timestamp, ingest_posts, select_new_posts #, get_parser
+from ingest import TransientError, get_parser, ingest_posts
 from instagram_scrapper.scrapper import InstagramError, fetch_posts
 
 log = logging.getLogger("discovery")
 
 
 def load_seen():
-    """Ids of posts we've already handled, so the LLM isn't paid twice for the same caption."""
+    """Ids of posts already judged not to be events."""
     try:
         return set(json.loads(config.SEEN_FILE.read_text()))
     except (FileNotFoundError, json.JSONDecodeError):
@@ -46,42 +51,36 @@ def discover_account(username, seen):
         return 0
     account = result["username"] or username.strip().lstrip("@").lower()  # one spelling, used for the backend
 
-    # 1. Ask the backend how far it has already got. If that fails for ANY reason we act as if
-    #    this account has no events yet, and every post is parsed.
-    latest, note = fetch_latest_timestamp(account)
-    if latest is None:
-        log.warning("%s: no usable latest timestamp (%s); parsing every recent post", account, note)
-    else:
-        log.info("%s: latest event so far is from %s", account, format_timestamp(latest))
-
-    # 2. Keep only new posts, oldest first: not in our seen list, and newer than the latest timestamp.
-    unseen = [p for p in result["posts"] if p["id"] not in seen]
-    new_posts, dropped = select_new_posts(unseen, latest)
-    if dropped:
-        log.info("%s: dropped %d post(s) already covered by the latest timestamp", account, dropped)
-    if not new_posts:
+    candidates = [p for p in result["posts"] if p["id"] not in seen]
+    if not candidates:
         log.info("%s: nothing new", account)
         return 0
 
-    # 3. Parse and send. A temporary failure stops this account for now (see ingest_posts).
-    outcome = ingest_posts(new_posts, account, stop_on_retry=True)
+    # The backend drops the posts it already has events for; the parser handles the rest.
+    # stop_on_retry: after one temporary failure (parser busy, backend down) don't pile more
+    # slow, paid attempts on top; the remaining posts wait for the next pass.
+    try:
+        outcome = ingest_posts(candidates, account, stop_on_retry=True)
+    except TransientError as e:  # backend down or editing off: nothing was spent
+        log.warning("%s: can't ingest right now: %s", account, e)
+        return 0
 
-    # Remember everything that reached a verdict. Posts in `retry` (backend or LLM
-    # temporarily down) are NOT remembered, so the next pass tries them again.
-    for item in outcome["created"] + outcome["skipped"]:
+    # Remember posts that can never become events. Posts in `retry` are NOT remembered, so the
+    # next pass tries them again, and the ones that became events are now on the backend's list.
+    for item in outcome["skipped"]:
         seen.add(item["post_id"])
     save_seen(seen)
 
-    attempted = sum(len(outcome[k]) for k in ("created", "skipped", "retry"))
     log.info(
-        "%s: %d created, %d skipped, %d to retry",
-        account, len(outcome["created"]), len(outcome["skipped"]), len(outcome["retry"]),
+        "%s: %d created, %d skipped, %d to retry, %d already uploaded",
+        account, len(outcome["created"]), len(outcome["skipped"]), len(outcome["retry"]), outcome["already_uploaded"],
     )
-    if attempted < len(new_posts):
-        log.warning("%s: stopped early after a temporary failure; %d newer post(s) wait for the next pass",
-                    account, len(new_posts) - attempted)
-    for item in outcome["skipped"]:
-        log.debug("  skipped %s: %s", item["permalink"], item["reason"])
+    attempted = sum(len(outcome[k]) for k in ("created", "skipped", "retry")) + outcome["already_uploaded"]
+    if attempted < len(candidates):
+        log.warning("%s: stopped early after a temporary failure; %d post(s) wait for the next pass",
+                    account, len(candidates) - attempted)
+    for item in outcome["skipped"] + outcome["retry"]:
+        log.debug("  %s: %s", item["permalink"], item["reason"])
     return len(outcome["created"])
 
 
@@ -116,8 +115,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
     try:
-        pass
-    #    get_parser()  # fail fast if MOONSHOT_API_KEY isn't set, rather than on the first post
+        get_parser()  # fail fast if the API keys aren't set, rather than on the first post
     except RuntimeError as e:
         sys.exit(f"error: {e}")
 

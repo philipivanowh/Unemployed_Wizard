@@ -1,21 +1,21 @@
 """Manual checks for the Python side. Run from the repo root (or anywhere):
 
-    python src/testing.py scrape USERNAME [--limit 5]      raw scraped posts, as JSON
-    python src/testing.py parse  USERNAME [--index 0]      run the LLM parser on ONE scraped post
-    python src/testing.py timestamp USERNAME               the backend's latest-event timestamp for an account
-    python src/testing.py ingest USERNAME [--limit 5]      full pipeline for one account (creates events!)
+    python src/testing.py scrape   USERNAME [--limit 5]    raw scraped posts, as JSON
+    python src/testing.py parse    USERNAME [--index 0]    run the parser (OCR + LLMs) on ONE scraped post
+    python src/testing.py uploaded USERNAME                posts the backend already made events from
+    python src/testing.py ingest   USERNAME [--limit 5]    full pipeline for one account (creates events!)
 
-`parse` and `timestamp` are safe: they send nothing to the backend that changes it.
-`ingest` applies the same latest-timestamp filter as the discovery loop, but not the loop's
-"seen posts" list, so it can still re-send a post the loop had skipped.
+`parse` and `uploaded` are safe: they change nothing in the backend. `parse` does spend real
+OCR and LLM calls, though. `ingest` skips posts the backend already has, like the discovery loop
+does, but not the loop's own list of posts judged not to be events, so it may re-parse those.
 """
 import argparse
 import json
 import sys
 
 import config
-from ingest import (extract_json, fetch_latest_timestamp, format_timestamp, ingest_posts,
-                    parse_post, select_new_posts, to_event)
+from ingest import (TransientError, extract_json, image_url_for, ingest_posts, parse_post,
+                    to_event, uploaded_post_urls)
 from instagram_scrapper.scrapper import InstagramError, fetch_posts
 
 
@@ -31,10 +31,10 @@ def scrape(username, limit=5):
 
 
 def test_parser(username, index=0):
-    """Run the post_parser LLM on one scraped post and show what comes out at every stage.
+    """Run post_parser on one scraped post and show what comes out at every stage.
 
-    1. the post's caption      2. the LLM's raw answer
-    3. the JSON extracted from it      4. the event that would be sent to the backend
+    1. the post's caption and image      2. the parser's raw answer
+    3. the JSON read from it             4. the event that would be sent to the backend
     Nothing is sent to the backend. Returns that event, or None if the post would be skipped.
     """
     result = fetch_posts(username, limit=index + 1)
@@ -45,13 +45,19 @@ def test_parser(username, index=0):
     post = posts[index]
 
     show("POST", f"{post['permalink']}\nposted {post['timestamp']}")
-    if not post["caption"]:
-        print("(no caption, so the pipeline would skip this post without calling the LLM)")
+    image = image_url_for(post)
+    show("IMAGE the parser will read", image or "(none)")
+    show("CAPTION", post["caption"] or "(none)")
+    if not post["caption"] and not image:
+        print("\nthe pipeline would skip this post: it has neither a caption nor an image")
         return None
-    show("CAPTION", post["caption"])
 
-    answer = parse_post(post)  # same call the discovery loop makes
-    show("LLM RAW ANSWER", answer)
+    try:
+        answer = parse_post(post)  # same call the discovery loop makes
+    except TransientError as e:
+        show("RESULT", f"the parser failed (the loop would retry this post later): {e}")
+        return None
+    show("PARSER RAW ANSWER", answer)
 
     try:
         parsed = extract_json(answer)
@@ -69,31 +75,19 @@ def test_parser(username, index=0):
     return event
 
 
-def check_timestamp(username):
-    """Show what the backend says is the latest event timestamp for an Instagram account.
-
-    This is the value discovery.py uses to drop posts it already has events for.
-    Returns the timestamp as an aware datetime, or None if the backend gave no usable answer.
-    """
+def check_uploaded(username):
+    """Show the posts the backend says it already made events from. The discovery loop skips these."""
     account = username.strip().lstrip("@").lower()
-    latest, note = fetch_latest_timestamp(account)
-    show(f"LATEST TIMESTAMP for {account}", f"asked: {config.BACKEND_URL}/api/timestamp?username={account}\n{note}")
-    if latest is None:
-        print("-> no usable timestamp: discovery would parse EVERY recent post of this account")
-    else:
-        print(f"-> {format_timestamp(latest)}: discovery would drop posts at or before this moment")
-    return latest
+    urls = uploaded_post_urls(account)
+    show(f"UPLOADED POSTS for {account}", f"asked: {config.BACKEND_URL}/api/instagram/accounts/{account}")
+    print("\n".join(urls) if urls else "(none yet: every recent post of this account would be parsed)")
+    return urls
 
 
 def ingest(username, limit=5):
     """Scrape an account and push its new events to the backend, then print what happened."""
     result = fetch_posts(username, limit=limit)
-    account = result["username"] or username
-    latest, note = fetch_latest_timestamp(account)
-    posts, dropped = select_new_posts(result["posts"], latest)
-    print(f"latest timestamp: {format_timestamp(latest) if latest else 'none (' + note + ')'}; "
-          f"dropped {dropped} already-ingested post(s), processing {len(posts)}", file=sys.stderr)
-    outcome = ingest_posts(posts, account)
+    outcome = ingest_posts(result["posts"], result["username"] or username)
     print(json.dumps(outcome, indent=2, ensure_ascii=False))
     return outcome
 
@@ -106,11 +100,11 @@ def main(argv=None):
     p.add_argument("username")
     p.add_argument("--limit", type=int, default=5)
 
-    p = sub.add_parser("parse", help="run the LLM parser on one scraped post")
+    p = sub.add_parser("parse", help="run the parser on one scraped post")
     p.add_argument("username")
     p.add_argument("--index", type=int, default=0, help="which post, 0 = the most recent (default)")
 
-    p = sub.add_parser("timestamp", help="show the backend's latest-event timestamp for an account")
+    p = sub.add_parser("uploaded", help="show the posts the backend already made events from")
     p.add_argument("username")
 
     p = sub.add_parser("ingest", help="scrape + parse + create events in the backend")
@@ -125,12 +119,14 @@ def main(argv=None):
             scrape(args.username, args.limit)
         elif args.command == "parse":
             test_parser(args.username, args.index)
-        elif args.command == "timestamp":
-            check_timestamp(args.username)
+        elif args.command == "uploaded":
+            check_uploaded(args.username)
         else:
             ingest(args.username, args.limit)
     except InstagramError as e:
         sys.exit(f"Instagram error (HTTP {e.status}): {e.payload}")
+    except TransientError as e:
+        sys.exit(f"can't do that right now: {e}")
     except (ValueError, RuntimeError) as e:
         sys.exit(f"error: {e}")
 

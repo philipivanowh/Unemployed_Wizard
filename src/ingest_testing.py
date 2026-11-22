@@ -16,7 +16,7 @@ import openai
 import requests
 
 import config
-from post_parser.post_parser import PostParser
+#from post_parser.post_parser import PostParser
 
 
 class TransientError(Exception):
@@ -105,18 +105,32 @@ def select_new_posts(posts, latest):
 
 
 # --- LLM -----------------------------------------------------------------------
-
+"""
 _parser = None
 
-
 def get_parser():
-    """Built on first use, so scraping still works without a Moonshot key."""
+    nothing = "Built on first use, so scraping still works without a Moonshot key."
     global _parser
     if _parser is None:
         if not config.MOONSHOT_API_KEY:
             raise RuntimeError("Set the MOONSHOT_API_KEY environment variable to parse posts")
         _parser = PostParser(config.MOONSHOT_API_KEY)
     return _parser
+"""
+
+"""
+        "title": parsed["title"][:120],
+        "date": parsed["date"],  # must be YYYY-MM-DD
+        "startTime": parsed["start_time"],  # must be 24h HH:MM
+        "endTime": parsed.get("end_time"),
+        "address": address,
+        # The parser has no list of items yet and the API needs at least one.
+        "freeItems": [parsed["title"][:100]],
+        "description": parsed.get("description") or "",
+        # Provenance, for the backend's /api/timestamp. NOTE: these two field names are our
+        # agreement with the backend; change them here if the backend calls them something else.
+        "username": username,
+"""
 
 
 def parse_post(post):
@@ -126,7 +140,13 @@ def parse_post(post):
     Raises TransientError if the LLM can't be reached.
     """
     try:
-        return get_parser().parse_text(post["caption"])
+        return """{
+        "title" : "random event", 
+        "date" : "2026-11-21", 
+        "start_time" : "11:00", 
+        "address_line_1" : "855 Rue Sherbrooke O"
+        }"""
+        #return get_parser().parse_text(post["caption"])
     except openai.OpenAIError as e:
         raise TransientError(f"LLM call failed: {e}")
 
@@ -201,7 +221,7 @@ def ingest_posts(posts, username, stop_on_retry=False):
     With stop_on_retry, the first temporary failure ends the run and the remaining posts are
     left untouched (not in any list), so no newer post gets ahead of a failed older one.
     """
-    get_parser()  # fail fast (RuntimeError) if the API key is missing, before touching any post
+    #get_parser()  # fail fast (RuntimeError) if the API key is missing, before touching any post
     created, skipped, retry = [], [], []
     for post in posts:
         info = {"post_id": post["id"], "permalink": post["permalink"]}
@@ -215,5 +235,6 @@ def ingest_posts(posts, username, stop_on_retry=False):
             if stop_on_retry:
                 break
         except Exception as e:  # one bad post shouldn't stop the others
+            print(e)
             skipped.append({**info, "reason": str(e)})
     return {"created": created, "skipped": skipped, "retry": retry}

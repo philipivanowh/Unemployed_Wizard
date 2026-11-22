@@ -23,8 +23,10 @@ POSTS_PER_ACCOUNT = 10
 # Seconds to wait between two accounts, to be gentle with the Graph API's rate limits.
 PAUSE_BETWEEN_ACCOUNTS = 5
 
-# Where the loop remembers which posts it already handled. This is the repo's data/ folder,
-# which is gitignored (the TypeScript database lives there too).
+# Where the loop remembers posts it judged NOT to be events (no deal, no date, ...), so it
+# doesn't pay to OCR and parse them again. Posts that became events don't need remembering:
+# the backend keeps that list (GET /api/instagram/accounts/<username>).
+# This is the repo's data/ folder, which is gitignored (the TypeScript database lives there too).
 SEEN_FILE = Path(__file__).resolve().parent.parent / "data" / "seen_posts.json"
 
 # --- Backend and LLM ---------------------------------------------------------
@@ -32,6 +34,13 @@ SEEN_FILE = Path(__file__).resolve().parent.parent / "data" / "seen_posts.json"
 # The TypeScript (Express) server that stores the events.
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3000")
 
-# Key for the Moonshot LLM used by post_parser. Set it in your shell, don't write it here:
-#   export MOONSHOT_API_KEY=...        (PowerShell: $env:MOONSHOT_API_KEY="...")
-MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY", "")
+# The backend's admin key. Only needed if adding events is turned off there (publicEditing off);
+# it's sent as the X-Admin-Key header. It's the ADMIN_KEY environment variable the backend reads.
+ADMIN_KEY = os.getenv("ADMIN_KEY", "")
+
+# post_parser reads these API keys itself from the environment (so they never live in code).
+# Set them in your shell, e.g.   export MOONSHOT_API_KEY=...    (PowerShell: $env:MOONSHOT_API_KEY="...")
+#   MOONSHOT_API_KEY   the LLM that extracts the event details
+#   TYPESAFE_API_KEY   the model that decides whether a post is a deal at all
+#   PADDLEOCR_API_KEY  reads the text printed on the post's image
+REQUIRED_API_KEYS = ("MOONSHOT_API_KEY", "TYPESAFE_API_KEY", "PADDLEOCR_API_KEY")
