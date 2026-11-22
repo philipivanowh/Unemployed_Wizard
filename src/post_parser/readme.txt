@@ -20,3 +20,13 @@ PostParser.evaluate_post will return a json string of the form:
             "address_line_2": "string|null",
             "conditions": "string|null",
           }
+
+The PostParser instace can take a few arguments:
+	jev_model:str = "jev-latest"
+	kimi_model:str = "kimi-k3"
+	paddel_model:str = "PP-OCRv6"
+    These three arguments set the models of the different AIs. Please consult the respective 
+    model's documentation to provide an appropriately formatted model identifier.
+	
+	kimi_reasoning_effor:str = "high"
+    Possible options: {"low", "high", "max"}
