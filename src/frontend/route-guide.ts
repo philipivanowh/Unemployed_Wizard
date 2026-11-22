@@ -14,8 +14,10 @@ const ROUTE_ICONS = {
 const WALK_METERS_PER_SECOND = 1.35;
 /** Close enough to count as arrived. */
 const ARRIVED_METERS = 30;
-/** Re-plan the route after moving this far. */
+/** Never re-plan more often than every this many metres walked. */
 const REROUTE_METERS = 20;
+/** Further than this from the route line counts as off route, and a new route is planned. */
+const OFF_ROUTE_METERS = 30;
 /** Farther than this (straight line), walking directions stop making sense. */
 const FAR_METERS = 6000;
 
@@ -74,6 +76,33 @@ class RouteGuideWalker implements Walker {
   }
 }
 
+/**
+ * How far is left along a route line from a position: the distance to the nearest point on the
+ * line, plus the rest of the line from there to its end. offBy is that first distance.
+ */
+function remainingAlong(line: L.LatLng[], here: L.LatLng): { meters: number; offBy: number; ahead: L.LatLng[] } {
+  // Local flat metres around here are plenty accurate over a walk.
+  const kx = 111_320 * Math.cos((here.lat * Math.PI) / 180);
+  const ky = 110_540;
+  const xy = (p: L.LatLng) => [(p.lng - here.lng) * kx, (p.lat - here.lat) * ky] as const;
+  const pts = line.map(xy);
+  const segLen = pts.slice(1).map((p, i) => Math.hypot(p[0] - pts[i]![0], p[1] - pts[i]![1]));
+  let best = { offBy: Infinity, meters: 0, ahead: line };
+  for (let i = 0; i < segLen.length; i++) {
+    const [ax, ay] = pts[i]!;
+    const [bx, by] = pts[i + 1]!;
+    const len = segLen[i]!;
+    const t = len > 0 ? Math.max(0, Math.min(1, (-ax * (bx - ax) - ay * (by - ay)) / (len * len))) : 0;
+    const offBy = Math.hypot(ax + (bx - ax) * t, ay + (by - ay) * t);
+    if (offBy < best.offBy) {
+      const rest = segLen.slice(i + 1).reduce((a, b) => a + b, 0);
+      const at = L.latLng(here.lat + (ay + (by - ay) * t) / ky, here.lng + (ax + (bx - ax) * t) / kx);
+      best = { offBy, meters: offBy + (1 - t) * len + rest, ahead: [at, ...line.slice(i + 1)] };
+    }
+  }
+  return best;
+}
+
 class RouteGuide {
   private readonly o: RouteGuideOptions;
   private readonly layer: L.LayerGroup;
@@ -81,6 +110,8 @@ class RouteGuide {
   private watchId: number | null = null;
   private routedFrom: L.LatLng | null = null;
   private startDistance = 0;
+  /** The route being shown (path plus the last bit to the door), to measure what's left. */
+  private routeLine: L.LatLng[] = [];
   private routeBounds: L.LatLngBounds | null = null;
   private userMarker: L.Marker | null = null;
   private accuracyCircle: L.Circle | null = null;
@@ -215,6 +246,7 @@ class RouteGuide {
     const wasActive = this.target !== null;
     this.target = null;
     this.routedFrom = null;
+    this.routeLine = [];
     this.routeBounds = null;
     this.userMarker = null;
     this.accuracyCircle = null;
@@ -317,8 +349,15 @@ class RouteGuide {
       return;
     }
 
-    if (first || !this.routedFrom || here.distanceTo(this.routedFrom) > REROUTE_METERS) {
+    // Keep following the current route while the walker is on it: the walked part is dropped and
+    // the progress bar and times count down. Only straying OFF_ROUTE_METERS from the line (or the
+    // first fix) plans a new route, so progress doesn't jump back with every replanning.
+    const left = this.routeLine.length > 1 ? remainingAlong(this.routeLine, here) : null;
+    if (first || !left || (left.offBy > OFF_ROUTE_METERS && here.distanceTo(this.routedFrom ?? here) > REROUTE_METERS)) {
       this.route(here, goal, first);
+    } else if (this.state === "active") {
+      this.drawRoute(left.ahead, left.offBy > 15 ? [here, left.ahead[0]!] : null, goal);
+      this.renderRoute(left.meters, left.offBy > 15);
     }
     if (straight <= ARRIVED_METERS && this.state !== "arrived") {
       this.state = "arrived";
@@ -349,18 +388,13 @@ class RouteGuide {
     for (let i = 1; i < path.length; i++) distance += path[i - 1]!.distanceTo(path[i]!);
     const line = path.length ? [...path, goal] : [from, goal];
 
-    this.layer.eachLayer((l) => {
-      if (l !== this.userMarker && l !== this.accuracyCircle) this.layer.removeLayer(l);
-    });
-    if (lead > 15) {
-      L.polyline([from, entry], { color: "#4f46e5", weight: 4, opacity: 0.8, dashArray: "1 9", lineCap: "round", interactive: false }).addTo(this.layer);
-    }
-    L.polyline(line, { color: "#ffffff", weight: 11, opacity: 0.95, lineJoin: "round", lineCap: "round", interactive: false }).addTo(this.layer);
-    L.polyline(line, { color: "#4f46e5", weight: 6, lineJoin: "round", lineCap: "round", interactive: false }).addTo(this.layer);
-    L.polyline(line, { color: "#c7d2fe", weight: 2, dashArray: "2 12", lineCap: "round", className: "route-flow", interactive: false }).addTo(this.layer);
-    this.addDestination(goal);
+    this.drawRoute(line, lead > 15 ? [from, entry] : null, goal);
 
+    this.routeLine = line;
     this.routeBounds = L.latLngBounds([from, goal, ...line]);
+    // A new plan after straying can be longer than the first; keep the bar's scale so it doesn't
+    // jump past 100% or reset.
+    if (!first) this.startDistance = Math.max(this.startDistance, distance);
     if (first) {
       this.startDistance = distance;
       this.fit();
@@ -369,6 +403,20 @@ class RouteGuide {
     this.state = from.distanceTo(goal) <= ARRIVED_METERS ? "arrived" : "active";
     if (this.state === "arrived") this.renderArrived();
     else this.renderRoute(distance, lead > 15);
+  }
+
+  /** The route line (and a dotted lead-in to it, if any), replacing what was drawn before. */
+  private drawRoute(line: L.LatLng[], leadIn: [L.LatLng, L.LatLng] | null, goal: L.LatLng): void {
+    this.layer.eachLayer((l) => {
+      if (l !== this.userMarker && l !== this.accuracyCircle) this.layer.removeLayer(l);
+    });
+    if (leadIn) {
+      L.polyline(leadIn, { color: "#4f46e5", weight: 4, opacity: 0.8, dashArray: "1 9", lineCap: "round", interactive: false }).addTo(this.layer);
+    }
+    L.polyline(line, { color: "#ffffff", weight: 11, opacity: 0.95, lineJoin: "round", lineCap: "round", interactive: false }).addTo(this.layer);
+    L.polyline(line, { color: "#4f46e5", weight: 6, lineJoin: "round", lineCap: "round", interactive: false }).addTo(this.layer);
+    L.polyline(line, { color: "#c7d2fe", weight: 2, dashArray: "2 12", lineCap: "round", className: "route-flow", interactive: false }).addTo(this.layer);
+    this.addDestination(goal);
   }
 
   private drawUser(at: L.LatLng, accuracy: number): void {
