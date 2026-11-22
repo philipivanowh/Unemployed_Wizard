@@ -318,6 +318,37 @@ function editControls(event: LocatedEvent): HTMLElement[] {
   return [actions, note];
 }
 
+// Pin colours: blue for upcoming events, green while an event is on, black in its last
+// ENDING_SOON_MINUTES. They update with the live check (LIVE_CHECK_MS).
+const ENDING_SOON_MINUTES = 15;
+type PinState = "upcoming" | "live" | "ending";
+const PIN_COLOURS: Record<PinState, string> = { upcoming: "#2563eb", live: "#16a34a", ending: "#111827" };
+const pinIcons = new Map<PinState, L.DivIcon>();
+
+/** A map pin in the state's colour, the same size and anchor as Leaflet's default pin. */
+function pinIcon(state: PinState): L.DivIcon {
+  let icon = pinIcons.get(state);
+  if (!icon) {
+    const c = PIN_COLOURS[state];
+    icon = L.divIcon({
+      className: `event-pin event-pin-${state}`,
+      html: `<svg viewBox="0 0 25 41" width="25" height="41" aria-hidden="true"><path d="M12.5 0C5.6 0 0 5.6 0 12.5 0 21.9 12.5 41 12.5 41S25 21.9 25 12.5C25 5.6 19.4 0 12.5 0z" fill="${c}" stroke="rgba(0,0,0,0.35)" stroke-width="1"/><circle cx="12.5" cy="12.5" r="4.6" fill="#ffffff"/></svg>`,
+      iconSize: [25, 41],
+      iconAnchor: [12.5, 41],
+      popupAnchor: [1, -34],
+    });
+    pinIcons.set(state, icon);
+  }
+  return icon;
+}
+
+function pinState(event: LocatedEvent, now: Date): PinState {
+  const phase = eventPhase(event, now);
+  if (phase !== "live") return "upcoming";
+  return eventWindow(event).end.getTime() - now.getTime() <= ENDING_SOON_MINUTES * 60_000 ? "ending" : "live";
+}
+const pinStatesById = new Map<string, PinState>();
+
 /** Every upcoming event with a location, by id (all get pins). */
 const eventsById = new Map<string, LocatedEvent>();
 const pinsById = new Map<string, L.Marker>();
@@ -357,7 +388,9 @@ async function refreshEvents(): Promise<void> {
         existing.getElement()?.setAttribute("title", event.title);
         continue;
       }
-      const marker = L.marker([event.latitude, event.longitude], { title: event.title })
+      const state = pinState(event, gameClock.now);
+      pinStatesById.set(event.id, state);
+      const marker = L.marker([event.latitude, event.longitude], { title: event.title, icon: pinIcon(state) })
         // Built when opened, so the live badge is always current.
         .bindPopup(() => eventPopup(eventsById.get(event.id) ?? event))
         .addTo(eventMap);
@@ -367,6 +400,7 @@ async function refreshEvents(): Promise<void> {
       if (seen.has(id)) continue;
       marker.remove();
       pinsById.delete(id);
+      pinStatesById.delete(id);
       eventsById.delete(id);
     }
 
@@ -392,6 +426,11 @@ function updateLive(): void {
     const phase = eventPhase(event, now);
     const live = phase === "live";
     if (live) liveCount++;
+    const state = pinState(event, now);
+    if (pinStatesById.get(event.id) !== state) {
+      pinStatesById.set(event.id, state);
+      pinsById.get(event.id)?.setIcon(pinIcon(state));
+    }
     const ring = liveRingsById.get(event.id);
     if ((live || phase === "soon") && !ring) {
       const icon = L.divIcon({ className: `live-ring${live ? "" : " soon"}`, html: "<span></span>", iconSize: [56, 56], iconAnchor: [28, 28] });
