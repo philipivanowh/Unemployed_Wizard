@@ -225,8 +225,8 @@ With both fields, the post is added to the account's **list of uploaded posts**,
 event. Posts are identified by their shortcode (`C1abcDEF`), which is case-sensitive and the same for `/p/` and
 `/reel/` links. Uploading a post that's already on a list answers **`409`**, with the existing event's id in
 `details.eventId`, and saves nothing: no event and no photo. This also holds when two uploads of one post arrive at
-the same moment. Deleting an event keeps its post on the list, with `eventId` becoming `null`, so the scraper doesn't
-bring back an event a moderator removed. Events return both fields (`null` when not from Instagram). They're set
+the same moment. Deleting an event (`DELETE /api/events/:id`) removes its post from the list,
+so the scraper may parse that post again on a later pass. Events return both fields (`null` when not from Instagram). They're set
 once, when the event is created; `PATCH` ignores them.
 
 **Asking which posts are done:** `GET /api/instagram/accounts/mcgillmagicclub` (or `@name`, or a URL-encoded profile

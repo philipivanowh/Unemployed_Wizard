@@ -35,14 +35,34 @@ PARSER_WORKERS = 4
 # "high" made every post take much longer.
 KIMI_REASONING_EFFORT = "low"
 
-# Seconds to wait between two accounts, to be gentle with the Graph API's rate limits.
-PAUSE_BETWEEN_ACCOUNTS = 1
+# The spacing between accounts comes from the Graph API limits below.
 
 # Where the loop remembers posts it judged NOT to be events (no deal, no date, ...), so it
 # doesn't pay to OCR and parse them again. Posts that became events don't need remembering:
 # the backend keeps that list (GET /api/instagram/accounts/<username>).
 # This is the repo's data/ folder, which is gitignored (the TypeScript database lives there too).
 SEEN_FILE = Path(__file__).resolve().parent.parent / "data" / "seen_posts.json"
+
+# --- Graph API limits (every script, see instagram_scrapper/throttle.py) ------
+#
+# Meta cancels tokens for "suspicious activity": bursts of calls, many different accounts looked
+# up quickly, and calling again after being refused. These limits apply to all scripts together
+# (the discovery loop, build_watchlist.py, testing.py), and survive restarts.
+
+GRAPH_LEDGER_FILE = Path(__file__).resolve().parent.parent / "data" / "graph_api_calls.json"
+
+# At least this many seconds between two calls, plus up to 50% random jitter.
+GRAPH_MIN_SECONDS_BETWEEN_CALLS = 20
+# Hard caps. Meta's own limit is around 200 calls per hour; stay far below it.
+GRAPH_MAX_CALLS_PER_HOUR = 60
+GRAPH_MAX_CALLS_PER_DAY = 400
+# Meta reports how much of its limits we use in response headers. Past this percentage, stop.
+GRAPH_USAGE_COOLDOWN_PERCENT = 50
+# How long every call stops after: high usage, a rate-limit error, or a refused token. A
+# "blocked" cooldown ends early when IG_ACCESS_TOKEN is replaced.
+GRAPH_COOLDOWN_HOURS = {"usage": 1, "rate_limit": 6, "blocked": 24}
+# A script waits this long at most for its turn, then gives up until its next run.
+GRAPH_MAX_WAIT_SECONDS = 15 * 60
 
 # --- Building the watchlist (build_watchlist.py) -----------------------------
 #
@@ -65,7 +85,8 @@ DIRECTORY_PAGES = [
 # Hashtags whose posts are searched for @mentions. Needs the Graph API's "Instagram Public
 # Content Access" feature (the script carries on without it), and Instagram allows only
 # 30 different hashtags per 7 days, so keep this list short.
-HASHTAGS = ["mcgillfreefood", "mcgillevents", "ssmu"]
+# Off by default: hashtag search is a separate permission and an easy way to look like a scraper.
+HASHTAGS = []
 
 # Accounts never to add (brands, news pages, ...), without the @.
 IGNORED_ACCOUNTS = ["mcgillu", "instagram"]
@@ -98,16 +119,19 @@ MIN_FOOD_POSTS = 2
 MAX_INACTIVE_DAYS = 180
 
 # Rejected accounts are looked at again after this many days (clubs change).
-RECHECK_DAYS = 60
-# Active accounts are reread this often, for their @mentions and their food-post rate.
-REFRESH_DAYS = 7
+RECHECK_DAYS = 90
 # With --retire: an active account goes dormant after this many posts with no food post.
+# Watched accounts are never re-fetched by build_watchlist.py: it reuses the posts the discovery
+# loop already fetched (RECENT_POSTS_FILE).
 RETIRE_AFTER_POSTS = 40
+RECENT_POSTS_FILE = Path(__file__).resolve().parent.parent / "data" / "recent_posts.json"
 
-# Graph API calls one run may make (the discovery loop shares the same rate limit),
-# and seconds between them.
-MAX_API_CALLS = 150
-PAUSE_BETWEEN_CALLS = 2
+# Limits on finding new accounts. Each candidate costs one Graph API call, and looking up many
+# accounts you don't follow is what looks most like scraping, so this grows the list slowly.
+MAX_API_CALLS = 15  # per run; --max-calls can only lower it
+MAX_NEW_ACCOUNTS_PER_RUN = 5  # stop once this many have been added
+MIN_HOURS_BETWEEN_RUNS = 24  # a second run sooner exits without calling anything
+MAX_WATCHED_ACCOUNTS = 50  # never add past this many found accounts: it bounds every discovery pass
 
 # --- Backend and LLM ---------------------------------------------------------
 

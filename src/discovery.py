@@ -19,6 +19,7 @@ Needs the TS backend running and the parser's API keys set (see config.REQUIRED_
 import argparse
 import json
 import logging
+import random
 import sys
 import threading
 import time
@@ -47,36 +48,47 @@ def save_seen(seen):
 
 
 def collect_posts(accounts, seen):
-    """Scrape every account and return [(account, post)] still worth parsing: recent, not judged
-    before, and not already an event. Raises InstagramError if Instagram refuses us outright
-    (bad or blocked token, rate limit) and TransientError if the backend can't be asked."""
-    jobs = []
-    for i, username in enumerate(accounts):
-        if i:
-            time.sleep(config.PAUSE_BETWEEN_ACCOUNTS)
-        try:
-            result = fetch_posts(username, limit=config.POSTS_PER_ACCOUNT)
-        except InstagramError as e:
-            if e.fatal:
-                raise
-            log.warning("%s: can't be read (HTTP %s): %s", username, e.status, e.message)
-            continue
-        account = result["username"] or username.strip().lstrip("@").lower()  # one spelling, used for the backend
-        posts = result["posts"]
-        fresh = [p for p in posts if p["id"] not in seen and is_recent(p)]
-        if fresh:  # only ask the backend when there's something to filter
-            done = uploaded_shortcodes(account)
-            fresh = [p for p in fresh if shortcode_of(p["permalink"]) not in done]
-        log.info("%s: %d post(s) fetched, %d new and recent", account, len(posts), len(fresh))
-        jobs += [(account, p) for p in fresh]
+    """Scrape the accounts and return [(account, post)] still worth parsing: recent, not judged
+    before, and not already an event. Calls are spaced out by the shared Graph API limits
+    (instagram_scrapper/throttle.py). If Instagram or those limits say stop, the accounts not
+    reached yet wait for the next pass. Raises TransientError if the backend can't be asked."""
+    jobs, fetched = [], {}
+    try:
+        for done_count, username in enumerate(accounts):
+            try:
+                result = fetch_posts(username, limit=config.POSTS_PER_ACCOUNT)
+            except InstagramError as e:
+                if e.fatal:
+                    log.error("stopped scraping after %d of %d accounts (HTTP %s, code %s): %s",
+                              done_count, len(accounts), e.status, e.code, e.message.rstrip("."))
+                    break
+                log.warning("%s: can't be read (HTTP %s): %s", username, e.status, e.message)
+                continue
+            account = result["username"] or username.strip().lstrip("@").lower()  # one spelling, used for the backend
+            jobs += [(account, p) for p in _worth_parsing(account, result["posts"], seen)]
+            fetched[account.lower()] = result["posts"]
+    finally:
+        watchlist.remember_posts(fetched)  # build_watchlist.py reuses these instead of calling again
     # Newest first: the likeliest to be about events that haven't happened yet.
     return sorted(jobs, key=lambda job: post_age_days(job[1]))
+
+
+def _worth_parsing(account, posts, seen):
+    fresh = [p for p in posts if p["id"] not in seen and is_recent(p)]
+    if fresh:  # only ask the backend when there's something to filter
+        done = uploaded_shortcodes(account)
+        fresh = [p for p in fresh if shortcode_of(p["permalink"]) not in done]
+    log.info("%s: %d post(s) fetched, %d new and recent", account, len(posts), len(fresh))
+    return fresh
 
 
 def discover_once():
     """One pass over the watchlist. Returns how many events were created."""
     seen = load_seen()
     accounts = watchlist.active_usernames()  # reread every pass: build_watchlist.py may have added some
+    # Shuffled, so that when the Graph API limits cut a pass short it isn't always the same
+    # accounts that miss out.
+    random.shuffle(accounts)
     log.info("discovery pass started (%d accounts)", len(accounts))
     started = time.time()
     try:
