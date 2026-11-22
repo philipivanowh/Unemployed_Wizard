@@ -210,6 +210,24 @@ function pixelLabel(text: string, colour: string, vertical: boolean): HTMLCanvas
   return v;
 }
 
+/**
+ * Smooth patchy noise in [0, 1) for a tile: random values on a lattice every 6 tiles, blended
+ * smoothly between them, so values come in soft blobs rather than salt-and-pepper.
+ */
+function pixelPatchNoise(x: number, y: number): number {
+  const S = 6;
+  const gx = Math.floor(x / S);
+  const gy = Math.floor(y / S);
+  const fx = x / S - gx;
+  const fy = y / S - gy;
+  const v = (ix: number, iy: number) => pixelHash(Math.imul(ix, 73856093) ^ Math.imul(iy, 19349663) ^ 0x5eed) / 4294967296;
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  const top = v(gx, gy) + (v(gx + 1, gy) - v(gx, gy)) * sx;
+  const bottom = v(gx, gy + 1) + (v(gx + 1, gy + 1) - v(gx, gy + 1)) * sx;
+  return top + (bottom - top) * sy;
+}
+
 /** What a building is, for hover names when it has no name of its own. */
 function lookName(look: string): string {
   return { A: "Rowhouses", B: "Walk-up apartments", C: "Office building", D: "Tower" }[look[0]!] ?? "McGill building";
@@ -507,6 +525,10 @@ class PixelWorld {
   private chunkRows = 0;
   /** One tile id per tile: set index * 16 + corner key (NW 8, NE 4, SW 2, SE 1; 1 = upper). */
   private tileIds = new Uint8Array(0);
+  /** Whole-grass tiles drawn with the darker grass (1), per tile. */
+  private darkGrass = new Uint8Array(0);
+  /** The darker grass tile at each mip level. */
+  private darkGrassBlocks: Uint8ClampedArray[] = [];
   /** Pixels of each tile id at each mip level. */
   private tileBlocks: Uint8ClampedArray[][] = [];
   private buildings: PixelBuilding[] = [];
@@ -519,6 +541,8 @@ class PixelWorld {
   private roofSheets: ImageData[] = [];
   private chunks = new Map<string, HTMLCanvasElement>();
   private cacheBytes = 0;
+  /** The whole world at one pixel per tile, shown wherever a chunk isn't drawn yet. */
+  private overview: HTMLCanvasElement | null = null;
   private edits: PixelMapEdits = { version: 1, buildings: {}, terrain: {} };
   /** Tile-corner terrain, (cols + 1) x (rows + 1). */
   private corner = new Uint8Array(0);
@@ -632,7 +656,18 @@ class PixelWorld {
     this.wallSheet = pixelImageData(wallImg);
     this.roofSheets = PIXEL_ROOF_COLOURS.map((swaps) => recolourRoof(this.roofSheet!, swaps));
     this.buildTileBlocks(sheets, sheetImgs.map(pixelImageData));
+    // The darker grass: the same tile, a fifth darker, so it keeps the grass's pattern and hue.
+    this.darkGrassBlocks = (this.tileBlocks[0] ?? []).map((block) => {
+      const d = new Uint8ClampedArray(block);
+      for (let i = 0; i < d.length; i += 4) {
+        d[i] = d[i]! * 0.78;
+        d[i + 1] = d[i + 1]! * 0.84;
+        d[i + 2] = d[i + 2]! * 0.74;
+      }
+      return d;
+    });
     this.buildWorld(data);
+    this.overview = this.renderOverview();
     this.ready = true;
     this.queueDraw();
   }
@@ -706,7 +741,7 @@ class PixelWorld {
         return [(gx - this.ox) / PIXEL_TILE, (gy - this.oy) / PIXEL_TILE];
       });
 
-    const fillPolygon = (pts: [number, number][], terrain: number) => {
+    const fillPolygon = (pts: [number, number][], terrain: number, target = corner) => {
       const ys = pts.map((p) => p[1]);
       const y0 = Math.max(0, Math.ceil(Math.min(...ys)));
       const y1 = Math.min(vh - 1, Math.floor(Math.max(...ys)));
@@ -721,7 +756,7 @@ class PixelWorld {
         for (let k = 0; k + 1 < xs.length; k += 2) {
           const xa = Math.max(0, Math.ceil(xs[k]!));
           const xb = Math.min(vw - 1, Math.floor(xs[k + 1]!));
-          for (let x = xa; x <= xb; x++) corner[y * vw + x] = terrain;
+          for (let x = xa; x <= xb; x++) target[y * vw + x] = terrain;
         }
       }
     };
@@ -762,6 +797,20 @@ class PixelWorld {
     // Paving under buildings, so no grass shows through at their edges. Not under McGill's
     // roof-and-wall buildings: they're drawn smaller than their footprint, on their lawn.
     const footprints = data.buildings.map((b) => ({ b, pts: toVertex(b.ring) }));
+
+    // Where the darker grass grows thickest: big green areas (the mountain, parks, campus lawns)
+    // and around McGill's buildings. Elsewhere it only shows in a few patches.
+    const lush = new Uint8Array(vw * vh);
+    for (const a of areas) if (a.terrain === TERRAIN_GRASS && polyArea(a.pts) > 500) fillPolygon(a.pts, 1, lush);
+    const R = 20; // tiles around each McGill building
+    for (const f of footprints) {
+      if (!f.b.mcgill) continue;
+      const cx = Math.round(f.pts.reduce((t, p) => t + p[0], 0) / f.pts.length);
+      const cy = Math.round(f.pts.reduce((t, p) => t + p[1], 0) / f.pts.length);
+      for (let y = Math.max(0, cy - R); y <= Math.min(vh - 1, cy + R); y++) {
+        for (let x = Math.max(0, cx - R); x <= Math.min(vw - 1, cx + R); x++) if ((x - cx) ** 2 + (y - cy) ** 2 <= R * R) lush[y * vw + x] = 1;
+      }
+    }
     for (const f of footprints) if (!f.b.mcgill) fillPolygon(f.pts, TERRAIN_SIDEWALK);
 
     // Paths, then roads on top (crosswalks aren't drawn, so roads stay whole).
@@ -836,6 +885,15 @@ class PixelWorld {
     }
     this.tileIds = new Uint8Array(this.cols * this.rows);
     this.retile(0, 0, this.cols - 1, this.rows - 1);
+    this.darkGrass = new Uint8Array(this.cols * this.rows);
+    for (let y = 0; y < this.rows; y++) {
+      for (let x = 0; x < this.cols; x++) {
+        // Only whole-grass tiles (grass-dirt sheet, all corners lower): edge tiles keep the usual grass.
+        if (this.tileIds[y * this.cols + x] !== 0) continue;
+        const odds = lush[y * vw + x] ? 0.72 : 0.1;
+        if (pixelPatchNoise(x, y) < odds) this.darkGrass[y * this.cols + x] = 1;
+      }
+    }
 
     this.buildBuildings(footprints.map((f) => f.b), mpp, polyArea);
     this.placeProps();
@@ -1268,7 +1326,8 @@ class PixelWorld {
       for (let tx = 0; tx < PIXEL_CHUNK_TILES; tx++) {
         const gx = cx * PIXEL_CHUNK_TILES + tx;
         if (gx >= this.cols) break;
-        const block = this.tileBlocks[this.tileIds[gy * this.cols + gx]!]?.[level];
+        const t = gy * this.cols + gx;
+        const block = this.darkGrass[t] ? this.darkGrassBlocks[level] : this.tileBlocks[this.tileIds[t]!]?.[level];
         if (!block) continue;
         for (let y = 0; y < b; y++) img.data.set(block.subarray(y * b * 4, (y + 1) * b * 4), ((ty * b + y) * size + tx * b) * 4);
       }
@@ -1318,6 +1377,23 @@ class PixelWorld {
         ctx.drawImage(this.sprite(it), (it.x - ox) / f, (it.y - oy) / f, it.w / f, it.h / f);
       }
     }
+    return canvas;
+  }
+
+  /**
+   * The whole world at one pixel per tile (the smallest mip level), with buildings: a blocky
+   * stand-in for chunks that aren't drawn yet, so the street map never shows through.
+   */
+  private renderOverview(): HTMLCanvasElement {
+    const [canvas, ctx] = pixelCanvas(this.cols, this.rows);
+    const img = ctx.createImageData(this.cols, this.rows);
+    for (let i = 0; i < this.cols * this.rows; i++) {
+      const block = this.darkGrass[i] ? this.darkGrassBlocks[PIXEL_MAX_LEVEL] : this.tileBlocks[this.tileIds[i]!]?.[PIXEL_MAX_LEVEL];
+      if (block) img.data.set(block.subarray(0, 4), i * 4);
+    }
+    ctx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    for (const b of this.buildings) ctx.drawImage(this.sprite(b), b.x / PIXEL_TILE, b.y / PIXEL_TILE, b.w / PIXEL_TILE, b.h / PIXEL_TILE);
     return canvas;
   }
 
@@ -1435,7 +1511,18 @@ class PixelWorld {
           this.chunk(cx, cy, Math.min(PIXEL_MAX_LEVEL, level + 1), false) ??
           this.chunk(cx, cy, Math.max(0, level - 1), false) ??
           null;
-        if (!canvas) continue;
+        if (!canvas) {
+          // Not drawn at any size yet: the overview's blocky version until it is.
+          if (this.overview) {
+            const x0 = Math.round(rsx + cx * PIXEL_CHUNK * s);
+            const y0 = Math.round(rsy + cy * PIXEL_CHUNK * s);
+            const x1 = Math.round(rsx + (cx + 1) * PIXEL_CHUNK * s);
+            const y1 = Math.round(rsy + (cy + 1) * PIXEL_CHUNK * s);
+            const t = PIXEL_CHUNK_TILES;
+            ctx.drawImage(this.overview, cx * t, cy * t, t, t, x0, y0, x1 - x0, y1 - y0);
+          }
+          continue;
+        }
       }
       const x0 = Math.round(rsx + cx * PIXEL_CHUNK * s);
       const y0 = Math.round(rsy + cy * PIXEL_CHUNK * s);
